@@ -1,0 +1,7 @@
+datetime
+fastapi
+redis
+io
+qrcode
+uvicorn
+pydantic
