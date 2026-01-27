@@ -28,8 +28,10 @@ def generate_qr_code(surge_id: str):
 
     img = qr.make_image(fill_color="black", back_color="white")
 
+    ## THIS IS WRITING THE IMAGE INTO MEMORY
     buffer = BytesIO()
     img.save(buffer, format="PNG")
+    ## resets the point to the start so FastAPI doesn't read it from the end
     buffer.seek(0)
 
     return buffer
