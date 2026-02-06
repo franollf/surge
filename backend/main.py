@@ -1,6 +1,7 @@
 # Surge Main.py
 # this creates the web server
 # fastapi will handle the routing + HTTP requests + responses
+from congestion import get_zone_congestion
 from fastapi import FastAPI, HTTPException
 # fastapi.responses lets us return file-like-data
 from fastapi.responses import StreamingResponse
@@ -96,3 +97,12 @@ def scanqrcode(data: ScanRequest):
         "zone": zone,
         "timestamp": timestamp
     }
+
+
+@app.get("/congestion")
+def get_zone_heatmap():
+    """
+    Returns anonymized zone-level congestion data.
+    No SURGE IDs or personal data exposed.
+    """
+    return get_zone_congestion(r)
