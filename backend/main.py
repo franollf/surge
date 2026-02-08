@@ -27,6 +27,7 @@ app = FastAPI(title="SURGE")
 
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = os.getenv("REDIS_PORT")
+
 r = redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
@@ -70,6 +71,7 @@ def issue_surge_id():
 def scanqrcode(data: ScanRequest):
     surge_id = data.surge_id
     zone = data.zone
+
     # first we need to check if the surgeid even exists
     if not r.exists(f"surge:{surge_id}"):
         raise HTTPException(
@@ -79,11 +81,29 @@ def scanqrcode(data: ScanRequest):
     if zone not in VALID_ZONES:
         raise HTTPException(status_code=400, detail="Invalid Zone")
 
-    # third we need to time when they scan
+    # NEW: Check if user has already scanned in this zone
+    scans_key = f"surge:{surge_id}:scans"
+    raw_scans = r.lrange(scans_key, 0, -1)
 
+    for raw_scan in raw_scans:
+        try:
+            existing_scan = json.loads(raw_scan)
+            if existing_scan.get("zone") == zone:
+                # User already scanned in this zone
+                return {
+                    "status": "already_scanned",
+                    "message": "You've already scanned in this zone",
+                    "surge_id": surge_id,
+                    "zone": zone,
+                    "previous_scan_timestamp": existing_scan.get("timestamp")
+                }
+        except json.JSONDecodeError:
+            continue
+
+    # third we need to time when they scan
     timestamp = datetime.utcnow().isoformat()
 
-    # fourth we need to store that scanne event
+    # fourth we need to store that scan event
     scan_event = {
         "zone": zone,
         "timestamp": timestamp
