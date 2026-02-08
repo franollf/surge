@@ -81,35 +81,36 @@ def scanqrcode(data: ScanRequest):
     if zone not in VALID_ZONES:
         raise HTTPException(status_code=400, detail="Invalid Zone")
 
-    # NEW: Check if user has already scanned in this zone
+    # Check current zone
     scans_key = f"surge:{surge_id}:scans"
     raw_scans = r.lrange(scans_key, 0, -1)
 
-    for raw_scan in raw_scans:
+    if raw_scans:
         try:
-            existing_scan = json.loads(raw_scan)
-            if existing_scan.get("zone") == zone:
-                # User already scanned in this zone
+            current_scan = json.loads(raw_scans[-1])
+            if current_scan.get("zone") == zone:
+                # Already in this zone
                 return {
                     "status": "already_scanned",
                     "message": "You've already scanned in this zone",
                     "surge_id": surge_id,
                     "zone": zone,
-                    "previous_scan_timestamp": existing_scan.get("timestamp")
+                    "current_timestamp": current_scan.get("timestamp")
                 }
         except json.JSONDecodeError:
-            continue
+            pass
 
-    # third we need to time when they scan
+    # Delete all previous scans (removes from previous zones)
+    r.delete(scans_key)
+
+    # Record new scan in the new zone
     timestamp = datetime.utcnow().isoformat()
-
-    # fourth we need to store that scan event
     scan_event = {
         "zone": zone,
         "timestamp": timestamp
     }
 
-    r.rpush(f"surge:{surge_id}:scans", json.dumps(scan_event))
+    r.rpush(scans_key, json.dumps(scan_event))
 
     return {
         "status": "scan recorded",
