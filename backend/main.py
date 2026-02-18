@@ -1,29 +1,44 @@
 # Surge Main.py
-# this creates the web server
-# fastapi will handle the routing + HTTP requests + responses
 from congestion import get_zone_congestion
 from fastapi import FastAPI, HTTPException
-# fastapi.responses lets us return file-like-data
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from storage import create_surge_id
 from qr import generate_qr_code
 from datetime import datetime
-# redis is a temporary system memory
-# that we will use to store the Active SURGE_IDS and Scan Event Lists
 import redis
 import json
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
+from typing import List
+from pydantic import BaseModel
+
+
+class BulkScanRequest(BaseModel):
+    surge_ids: List[str]
+    zone_id: str
+
+
 load_dotenv()
 
 
 class ScanRequest(BaseModel):
     surge_id: str
-    zone: str
+    zone_id: str  # ← FIXED: was "zone", now "zone_id"
 
 
 app = FastAPI(title="SURGE")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Surge-ID"]
+)
 
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = os.getenv("REDIS_PORT")
@@ -47,83 +62,163 @@ VALID_ZONES = {
 
 
 @app.get("/issue")
-# issuing a new surge id and returning its qr code
 def issue_surge_id():
-
     surge = create_surge_id()
 
-    r.set(
-        f"surge:{surge.id}",
-        "active",
-        ex=3600
-    )
+    r.set(f"surge:{surge.id}", "active", ex=3600)
 
     qr_buffer = generate_qr_code(str(surge.id))
     print("Issued SURGE ID:", surge.id)
 
     return StreamingResponse(
         qr_buffer,
-        media_type="image/png"
+        media_type="image/png",
+        headers={"X-Surge-ID": str(surge.id)}
     )
 
 
 @app.post("/scan")
-def scanqrcode(data: ScanRequest):
-    surge_id = data.surge_id
-    zone = data.zone
+def scan_checkpoint(scan: ScanRequest):
+    """
+    Called when a passenger scans their QR code at a checkpoint.
+    Updates their current zone and logs scan event for congestion analysis.
+    """
+    # Verify SURGE ID exists and is active
+    status = r.get(f"surge:{scan.surge_id}")
 
-    # first we need to check if the surgeid even exists
-    if not r.exists(f"surge:{surge_id}"):
+    if not status:
         raise HTTPException(
             status_code=404, detail="Invalid or expired SURGE ID")
 
-    # second validate the zone
-    if zone not in VALID_ZONES:
-        raise HTTPException(status_code=400, detail="Invalid Zone")
+    # Validate zone
+    if scan.zone_id not in VALID_ZONES:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid zone_id: {scan.zone_id}")
 
-    # Check current zone
-    scans_key = f"surge:{surge_id}:scans"
-    raw_scans = r.lrange(scans_key, 0, -1)
+    # Update current zone (for passenger tracking)
+    r.set(
+        f"surge:{scan.surge_id}:current_zone",
+        scan.zone_id,
+        ex=3600
+    )
 
-    if raw_scans:
-        try:
-            current_scan = json.loads(raw_scans[-1])
-            if current_scan.get("zone") == zone:
-                # Already in this zone
-                return {
-                    "status": "already_scanned",
-                    "message": "You've already scanned in this zone",
-                    "surge_id": surge_id,
-                    "zone": zone,
-                    "current_timestamp": current_scan.get("timestamp")
-                }
-        except json.JSONDecodeError:
-            pass
-
-    # Delete all previous scans (removes from previous zones)
-    r.delete(scans_key)
-
-    # Record new scan in the new zone
-    timestamp = datetime.utcnow().isoformat()
+    # Log scan event for congestion analysis (CORRECT FORMAT)
     scan_event = {
-        "zone": zone,
-        "timestamp": timestamp
+        # Note: "zone" not "zone_id" (congestion.py expects this)
+        "zone": scan.zone_id,
+        "timestamp": datetime.now().isoformat()
     }
 
-    r.rpush(scans_key, json.dumps(scan_event))
+    r.lpush(
+        f"surge:{scan.surge_id}:scans",  # ✅ Correct key name
+        json.dumps(scan_event)  # ✅ Proper JSON format
+    )
+    r.expire(f"surge:{scan.surge_id}:scans", 3600)
+
+    print(f"SURGE ID {scan.surge_id} scanned at {scan.zone_id}")
 
     return {
-        "status": "scan recorded",
-        "surge_id": surge_id,
-        "zone": zone,
-        "timestamp": timestamp
+        "success": True,
+        "surge_id": scan.surge_id,
+        "current_zone": scan.zone_id,
+        "message": f"Checked in to {scan.zone_id}"
     }
+
+
+@app.post("/scan/bulk")
+def scan_multiple_passengers(scan: BulkScanRequest):
+    """
+    Scan multiple passengers into a zone at once.
+    Useful for test simulations.
+    """
+
+    if scan.zone_id not in VALID_ZONES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid zone_id: {scan.zone_id}"
+        )
+
+    updated = []
+    failed = []
+
+    for surge_id in scan.surge_ids:
+
+        status = r.get(f"surge:{surge_id}")
+
+        if not status:
+            failed.append(surge_id)
+            continue
+
+        # Update current zone
+        r.set(
+            f"surge:{surge_id}:current_zone",
+            scan.zone_id,
+            ex=3600
+        )
+
+        # Log scan event
+        scan_event = {
+            "zone": scan.zone_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        r.lpush(
+            f"surge:{surge_id}:scans",
+            json.dumps(scan_event)
+        )
+        r.expire(f"surge:{surge_id}:scans", 3600)
+
+        updated.append(surge_id)
+
+    print(f"Bulk scan: {len(updated)} passengers → {scan.zone_id}")
+
+    return {
+        "success": True,
+        "zone_id": scan.zone_id,
+        "updated_count": len(updated),
+        "failed_count": len(failed),
+        "updated_ids": updated,
+        "failed_ids": failed
+    }
+
+
+@app.get("/zones")  # ← ADDED: This endpoint was missing!
+def get_zones():
+    """
+    Returns congestion data for all zones.
+    Frontend expects this endpoint at /zones
+    """
+    return get_zone_congestion(r)
 
 
 @app.get("/congestion")
 def get_zone_heatmap():
     """
-    Returns anonymized zone-level congestion data.
-    No SURGE IDs or personal data exposed.
+    Alternative endpoint name for congestion data
     """
     return get_zone_congestion(r)
+
+
+@app.get("/passenger/{surge_id}/zone")
+def get_passenger_zone(surge_id: str):
+    """
+    Returns the current zone for a given SURGE ID.
+    """
+    # Check if SURGE ID is valid
+    status = r.get(f"surge:{surge_id}")
+
+    if not status:
+        raise HTTPException(
+            status_code=404, detail="Invalid or expired SURGE ID")
+
+    # Get current zone
+    current_zone = r.get(f"surge:{surge_id}:current_zone")
+
+    if not current_zone:
+        # Default to terminal_entry if never scanned
+        current_zone = "terminal_entry"
+
+    return {
+        "surge_id": surge_id,
+        "current_zone": current_zone
+    }
