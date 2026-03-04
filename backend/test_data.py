@@ -141,7 +141,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # Create 100 people at terminal_entry
-    create_congestion_at_zone("terminal_entry", num_passengers=100)
+    create_congestion_at_zone("boarding_gate", num_passengers=200)
 
     print("\n" + "=" * 60)
     print("✅ Test data generation complete!")
