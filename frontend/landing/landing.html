@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SURGE Admin — Building Config</title>
+    <link rel="stylesheet" href="landing.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <div>
+          <h1>SURGE Admin</h1>
+          <div class="sub">
+            Create <b>floors</b> and <b>zones</b> for any building.
+          </div>
+        </div>
+
+        <div class="pill">
+          <label for="buildingId">Building ID</label>
+          <input id="buildingId" class="mono" placeholder="airport-yvr" />
+        </div>
+      </div>
+
+      <div class="grid">
+        <!-- Left Builder -->
+        <div class="card">
+          <div class="head">
+            <h2>Build Configuration</h2>
+            <div class="btns">
+              <button class="secondary" id="btnLoad">Load</button>
+              <button class="secondary" id="btnSave">Save</button>
+              <button class="danger" id="btnClear">Clear</button>
+            </div>
+          </div>
+
+          <div class="body">
+            <div class="row">
+              <div class="field">
+                <label>Building Name</label>
+                <input id="buildingName" placeholder="YVR Terminal" />
+              </div>
+
+              <div class="field">
+                <label>Default Floor</label>
+                <select id="defaultFloor"></select>
+              </div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="row">
+              <div class="field">
+                <label>Add Floor</label>
+                <input id="floorName" placeholder="Level 1" />
+              </div>
+              <div class="field small-btn">
+                <button id="btnAddFloor">+ Add Floor</button>
+              </div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="row">
+              <div class="field">
+                <label>Add Zone</label>
+                <input id="zoneName" placeholder="Security" />
+              </div>
+
+              <div class="field">
+                <label>Floor</label>
+                <select id="zoneFloor"></select>
+              </div>
+
+              <div class="field">
+                <label>Type</label>
+                <select id="zoneType">
+                  <option value="movement">Movement</option>
+                  <option value="queue">Queue</option>
+                  <option value="amenity">Amenity</option>
+                  <option value="gate">Gate</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+
+              <div class="field small-btn">
+                <button id="btnAddZone">+ Add Zone</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Preview -->
+        <div class="card">
+          <div class="head">
+            <h2>Floors & Zones</h2>
+            <a class="link" id="openPassenger" href="#" target="_blank">
+              Open Passenger →
+            </a>
+          </div>
+          <div class="body">
+            <div id="preview" class="list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="landing.js"></script>
+  </body>
+</html>

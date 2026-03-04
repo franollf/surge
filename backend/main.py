@@ -6,31 +6,20 @@ from fastapi.responses import StreamingResponse
 from storage import create_surge_id
 from qr import generate_qr_code
 from datetime import datetime
-import redis
-import json
-from pydantic import BaseModel
-import os
-from dotenv import load_dotenv
 from typing import List
 from pydantic import BaseModel
-
-
-class BulkScanRequest(BaseModel):
-    surge_ids: List[str]
-    zone_id: str
-
+import redis
+import json
+import os
+from dotenv import load_dotenv
 
 load_dotenv()
 
-
-class ScanRequest(BaseModel):
-    surge_id: str
-    zone_id: str  # ← FIXED: was "zone", now "zone_id"
-
-
 app = FastAPI(title="SURGE")
 
-# Add CORS middleware
+# ─────────────────────────────────────────────
+# CORS
+# ─────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,6 +29,9 @@ app.add_middleware(
     expose_headers=["X-Surge-ID"]
 )
 
+# ─────────────────────────────────────────────
+# Redis
+# ─────────────────────────────────────────────
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = os.getenv("REDIS_PORT")
 
@@ -51,16 +43,34 @@ r = redis.Redis(
     socket_timeout=2
 )
 
-VALID_ZONES = {
-    "terminal_entry",
-    "security",
-    "customs",
-    "boarding_gate",
-    "transfer",
-    "amenities"
-}
+# ─────────────────────────────────────────────
+# Models
+# ─────────────────────────────────────────────
 
 
+class ScanRequest(BaseModel):
+    surge_id: str
+    zone_id: str
+    building_id: str
+
+
+class BulkScanRequest(BaseModel):
+    surge_ids: List[str]
+    zone_id: str
+    building_id: str
+
+
+class BuildingConfig(BaseModel):
+    building_id: str
+    building_name: str
+    default_floor_id: str
+    floors: list
+    zones: list
+
+
+# ─────────────────────────────────────────────
+# Issue SURGE ID
+# ─────────────────────────────────────────────
 @app.get("/issue")
 def issue_surge_id():
     surge = create_surge_id()
@@ -68,7 +78,6 @@ def issue_surge_id():
     r.set(f"surge:{surge.id}", "active", ex=3600)
 
     qr_buffer = generate_qr_code(str(surge.id))
-    print("Issued SURGE ID:", surge.id)
 
     return StreamingResponse(
         qr_buffer,
@@ -77,62 +86,117 @@ def issue_surge_id():
     )
 
 
+# ─────────────────────────────────────────────
+# Save Building Config
+# ─────────────────────────────────────────────
+@app.post("/buildings/{building_id}/config")
+def save_building_config(building_id: str, config: BuildingConfig):
+
+    r.set(
+        f"surge:building:{building_id}:config",
+        json.dumps(config.dict())
+    )
+
+    return {"success": True}
+
+
+# ─────────────────────────────────────────────
+# Get Building Config
+# ─────────────────────────────────────────────
+@app.get("/buildings/{building_id}/config")
+def get_building_config(building_id: str):
+
+    raw = r.get(f"surge:building:{building_id}:config")
+
+    if not raw:
+        raise HTTPException(status_code=404, detail="No config found")
+
+    return json.loads(raw)
+
+
+# ─────────────────────────────────────────────
+# Scan Passenger
+# ─────────────────────────────────────────────
 @app.post("/scan")
 def scan_checkpoint(scan: ScanRequest):
-    """
-    Called when a passenger scans their QR code at a checkpoint.
-    Updates their current zone and logs scan event for congestion analysis.
-    """
-    # Verify SURGE ID exists and is active
+
+    # Verify SURGE ID exists
     status = r.get(f"surge:{scan.surge_id}")
 
     if not status:
         raise HTTPException(
-            status_code=404, detail="Invalid or expired SURGE ID")
+            status_code=404,
+            detail="Invalid or expired SURGE ID"
+        )
 
-    # Validate zone
-    if scan.zone_id not in VALID_ZONES:
+    # Load building config
+    config_raw = r.get(
+        f"surge:building:{scan.building_id}:config"
+    )
+
+    if not config_raw:
         raise HTTPException(
-            status_code=400, detail=f"Invalid zone_id: {scan.zone_id}")
+            status_code=404,
+            detail="Building config not found"
+        )
 
-    # Update current zone (for passenger tracking)
+    config = json.loads(config_raw)
+
+    valid_zone_ids = {z["zone_id"] for z in config["zones"]}
+
+    if scan.zone_id not in valid_zone_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid zone_id: {scan.zone_id}"
+        )
+
+    # Update passenger zone
     r.set(
         f"surge:{scan.surge_id}:current_zone",
         scan.zone_id,
         ex=3600
     )
 
-    # Log scan event for congestion analysis (CORRECT FORMAT)
+    # Log scan event
     scan_event = {
-        # Note: "zone" not "zone_id" (congestion.py expects this)
         "zone": scan.zone_id,
-        "timestamp": datetime.now().isoformat()
+        "building_id": scan.building_id,
+        "timestamp": datetime.utcnow().isoformat()
     }
 
     r.lpush(
-        f"surge:{scan.surge_id}:scans",  # ✅ Correct key name
-        json.dumps(scan_event)  # ✅ Proper JSON format
+        f"surge:{scan.surge_id}:scans",
+        json.dumps(scan_event)
     )
     r.expire(f"surge:{scan.surge_id}:scans", 3600)
-
-    print(f"SURGE ID {scan.surge_id} scanned at {scan.zone_id}")
 
     return {
         "success": True,
         "surge_id": scan.surge_id,
-        "current_zone": scan.zone_id,
-        "message": f"Checked in to {scan.zone_id}"
+        "current_zone": scan.zone_id
     }
 
 
+# ─────────────────────────────────────────────
+# Bulk Scan
+# ─────────────────────────────────────────────
 @app.post("/scan/bulk")
 def scan_multiple_passengers(scan: BulkScanRequest):
-    """
-    Scan multiple passengers into a zone at once.
-    Useful for test simulations.
-    """
 
-    if scan.zone_id not in VALID_ZONES:
+    config_raw = r.get(
+        f"surge:building:{scan.building_id}:config"
+    )
+
+    if not config_raw:
+        raise HTTPException(
+            status_code=404,
+            detail="Building config not found"
+        )
+
+    config = json.loads(config_raw)
+    valid_zone_ids = {z["zone_id"] for z in config["zones"]}
+
+    if scan.zone_id not in valid_zone_ids:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid zone_id: {scan.zone_id}"
@@ -149,16 +213,15 @@ def scan_multiple_passengers(scan: BulkScanRequest):
             failed.append(surge_id)
             continue
 
-        # Update current zone
         r.set(
             f"surge:{surge_id}:current_zone",
             scan.zone_id,
             ex=3600
         )
 
-        # Log scan event
         scan_event = {
             "zone": scan.zone_id,
+            "building_id": scan.building_id,
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -170,55 +233,67 @@ def scan_multiple_passengers(scan: BulkScanRequest):
 
         updated.append(surge_id)
 
-    print(f"Bulk scan: {len(updated)} passengers → {scan.zone_id}")
-
     return {
         "success": True,
         "zone_id": scan.zone_id,
         "updated_count": len(updated),
-        "failed_count": len(failed),
-        "updated_ids": updated,
-        "failed_ids": failed
+        "failed_count": len(failed)
     }
 
 
-@app.get("/zones")  # ← ADDED: This endpoint was missing!
-def get_zones():
-    """
-    Returns congestion data for all zones.
-    Frontend expects this endpoint at /zones
-    """
-    return get_zone_congestion(r)
+# ─────────────────────────────────────────────
+# Congestion Endpoint
+# ─────────────────────────────────────────────
+@app.get("/congestion/{building_id}")
+def get_zone_heatmap(building_id: str):
+    return get_zone_congestion(r, building_id)
 
 
-@app.get("/congestion")
-def get_zone_heatmap():
-    """
-    Alternative endpoint name for congestion data
-    """
-    return get_zone_congestion(r)
-
-
+# ─────────────────────────────────────────────
+# Passenger Current Zone
+# ─────────────────────────────────────────────
 @app.get("/passenger/{surge_id}/zone")
 def get_passenger_zone(surge_id: str):
-    """
-    Returns the current zone for a given SURGE ID.
-    """
-    # Check if SURGE ID is valid
+
     status = r.get(f"surge:{surge_id}")
 
     if not status:
         raise HTTPException(
-            status_code=404, detail="Invalid or expired SURGE ID")
+            status_code=404,
+            detail="Invalid or expired SURGE ID"
+        )
 
-    # Get current zone
     current_zone = r.get(f"surge:{surge_id}:current_zone")
 
     if not current_zone:
-        # Default to terminal_entry if never scanned
-        current_zone = "terminal_entry"
+        current_zone = "unknown"
 
     return {
         "surge_id": surge_id,
         "current_zone": current_zone
     }
+
+
+@app.get("/buildings")
+def list_buildings():
+    """
+    Returns all building IDs stored in Redis.
+    """
+    cursor = 0
+    buildings = []
+
+    while True:
+        cursor, keys = r.scan(
+            cursor,
+            match="surge:building:*:config",
+            count=100
+        )
+
+        for key in keys:
+            building_id = key.split(":")[2]
+            buildings.append(building_id)
+
+        if cursor == 0:
+            break
+
+    return {"buildings": buildings}
