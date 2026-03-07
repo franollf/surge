@@ -1,12 +1,19 @@
 # Surge Main.py
 from congestion import get_zone_congestion
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from storage import create_surge_id
 from qr import generate_qr_code
+from zone_scheduling import (
+    set_zone_inactive,
+    remove_zone_inactive,
+    get_inactive_zones_for_building,
+    get_active_zone_ids,
+    is_zone_active,
+)
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 import redis
 import json
@@ -66,6 +73,12 @@ class BuildingConfig(BaseModel):
     default_floor_id: str
     floors: list
     zones: list
+
+
+class ZoneScheduleRequest(BaseModel):
+    building_id: str
+    zone_id: str
+    date: str  # YYYY-MM-DD format
 
 
 # ─────────────────────────────────────────────
@@ -148,6 +161,13 @@ def scan_checkpoint(scan: ScanRequest):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid zone_id: {scan.zone_id}"
+        )
+
+    # Check if the zone is currently inactive
+    if not is_zone_active(r, scan.building_id, scan.zone_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Zone '{scan.zone_id}' is currently inactive and not accepting scans"
         )
 
     # Update passenger zone
@@ -246,7 +266,8 @@ def scan_multiple_passengers(scan: BulkScanRequest):
 # ─────────────────────────────────────────────
 @app.get("/congestion/{building_id}")
 def get_zone_heatmap(building_id: str):
-    return get_zone_congestion(r, building_id)
+    active_zones = get_active_zone_ids(r, building_id)
+    return get_zone_congestion(r, building_id, active_zones=active_zones)
 
 
 # ─────────────────────────────────────────────
@@ -297,3 +318,75 @@ def list_buildings():
             break
 
     return {"buildings": buildings}
+
+
+# ─────────────────────────────────────────────
+# Zone Inactivity Scheduling
+# ─────────────────────────────────────────────
+
+@app.post("/buildings/{building_id}/zones/schedule-inactive")
+def schedule_zone_inactive(building_id: str, data: ZoneScheduleRequest):
+    """
+    Schedule a zone as inactive on a specific calendar date.
+    When inactive, the zone won't appear in congestion data
+    and scans to that zone will be rejected.
+    """
+    result = set_zone_inactive(r, building_id, data.zone_id, data.date)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@app.delete("/buildings/{building_id}/zones/schedule-inactive")
+def unschedule_zone_inactive(building_id: str, data: ZoneScheduleRequest):
+    """
+    Remove a previously scheduled inactive date for a zone.
+    """
+    result = remove_zone_inactive(r, building_id, data.zone_id, data.date)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@app.get("/buildings/{building_id}/zones/inactive")
+def list_inactive_zones(
+    building_id: str,
+    date: Optional[str] = Query(
+        default=None,
+        description="Date in YYYY-MM-DD format. Defaults to today."
+    )
+):
+    """
+    List all zones that are scheduled as inactive for a given date.
+    """
+    inactive = get_inactive_zones_for_building(r, building_id, target_date=date)
+    return {
+        "building_id": building_id,
+        "date": date or "today",
+        "inactive_zones": inactive,
+        "count": len(inactive)
+    }
+
+
+@app.get("/buildings/{building_id}/zones/active")
+def list_active_zones(
+    building_id: str,
+    date: Optional[str] = Query(
+        default=None,
+        description="Date in YYYY-MM-DD format. Defaults to today."
+    )
+):
+    """
+    Get all zones that are currently active (not scheduled inactive).
+    """
+    active = get_active_zone_ids(r, building_id, target_date=date)
+    return {
+        "building_id": building_id,
+        "date": date or "today",
+        "active_zone_ids": sorted(active),
+        "count": len(active)
+    }

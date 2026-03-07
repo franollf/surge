@@ -210,7 +210,7 @@ def classify_congestion(score):
 # Main Entry Point
 # ─────────────────────────────────────────────
 
-def get_zone_congestion(redis_client, building_id: str) -> dict:
+def get_zone_congestion(redis_client, building_id: str, active_zones: set[str] = None) -> dict:
 
     # Load building config
     config_raw = redis_client.get(
@@ -227,6 +227,10 @@ def get_zone_congestion(redis_client, building_id: str) -> dict:
     config = json.loads(config_raw)
 
     defined_zones = {z["zone_id"] for z in config["zones"]}
+
+    # Filter to only active zones if provided
+    if active_zones is not None:
+        defined_zones = defined_zones & active_zones
 
     surge_ids = get_all_surge_ids(redis_client)
 
