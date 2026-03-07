@@ -20,16 +20,76 @@ r = redis.Redis(
     decode_responses=True
 )
 
-ZONES = ["terminal_entry", "security", "customs",
-         "boarding_gate", "transfer", "amenities"]
+DEFAULT_BUILDING_ID = "airport-yvr"
 
 
-def create_congestion_at_zone(zone_name, num_passengers=20):
+def load_building_config(building_id: str) -> dict:
+    raw = r.get(f"surge:building:{building_id}:config")
+    if not raw:
+        raise RuntimeError(
+            f"Building config not found for building_id='{building_id}'. "
+            f"Create/save it first via POST /buildings/{building_id}/config."
+        )
+    return json.loads(raw)
+
+
+def resolve_zone_id(config: dict, zone: str) -> str:
     """
-    Create heavy congestion at a specific zone with RECENT scans
+    Accepts either a zone_id or a human zone_name and returns the zone_id.
+
+    Matching rules:
+    - exact match on zone_id
+    - case-insensitive match on zone_name
+    - case-insensitive match on zone_id (helpful for simple ids)
     """
-    print(
-        f"\n🔥 Creating congestion at {zone_name} with {num_passengers} passengers...")
+    zones = config.get("zones") or []
+    if not zones:
+        raise RuntimeError("Building config has no zones[]")
+
+    # exact zone_id
+    for z in zones:
+        if z.get("zone_id") == zone:
+            return z["zone_id"]
+
+    # case-insensitive zone_name
+    zone_lower = zone.strip().lower()
+    for z in zones:
+        if (z.get("zone_name") or "").strip().lower() == zone_lower:
+            return z["zone_id"]
+
+    # case-insensitive zone_id
+    for z in zones:
+        if (z.get("zone_id") or "").strip().lower() == zone_lower:
+            return z["zone_id"]
+
+    available = ", ".join(
+        [f'{z.get("zone_name", "?")}({z.get("zone_id", "?")})' for z in zones]
+    )
+    raise RuntimeError(
+        f"Could not resolve zone '{zone}'. Available zones: {available}"
+    )
+
+
+def create_congestion_at_zone(
+    zone: str,
+    num_passengers: int = 20,
+    building_id: str = DEFAULT_BUILDING_ID
+):
+    """
+    Create heavy congestion at a specific zone with RECENT scans,
+    scoped to a building_id and using a zone_id from that building config.
+    """
+    config = load_building_config(building_id)
+    zone_id = resolve_zone_id(config, zone)
+
+    all_zone_ids = [z["zone_id"]
+                    for z in (config.get("zones") or []) if z.get("zone_id")]
+    if not all_zone_ids:
+        raise RuntimeError(
+            "No zone_id values found in building config zones[]")
+
+    print(f"\n🔥 Creating congestion at zone='{zone}' (zone_id='{zone_id}')")
+    print(f"   building_id='{building_id}', passengers={num_passengers}")
 
     created_ids = []
     for i in range(num_passengers):
@@ -37,46 +97,50 @@ def create_congestion_at_zone(zone_name, num_passengers=20):
         created_ids.append(surge_id)
         r.set(f"surge:{surge_id}", "active", ex=3600)
 
-        # Create RECENT scans (within last 5 minutes)
-        now = datetime.utcnow()  # ✅ CHANGED: Use UTC!
+        now = datetime.utcnow()
 
         # Entry scan 1-4 minutes ago
-        entry_time = now - \
-            timedelta(minutes=random.randint(1, 4),
-                      seconds=random.randint(0, 59))
+        entry_time = now - timedelta(
+            minutes=random.randint(1, 4),
+            seconds=random.randint(0, 59)
+        )
 
-        # Previous zone (they came from somewhere)
-        prev_zone = random.choice([z for z in ZONES if z != zone_name])
+        # Previous zone in SAME building (choose a different zone_id if possible)
+        prev_zone_candidates = [
+            zid for zid in all_zone_ids if zid != zone_id] or [zone_id]
+        prev_zone_id = random.choice(prev_zone_candidates)
+
         scan1 = {
-            "zone": prev_zone,
+            "zone": prev_zone_id,
+            "building_id": building_id,
             "timestamp": (entry_time - timedelta(minutes=random.randint(2, 5))).isoformat()
         }
 
-        # Current zone scan (RECENT - within last 5 minutes)
         scan2 = {
-            "zone": zone_name,
+            "zone": zone_id,
+            "building_id": building_id,
             "timestamp": entry_time.isoformat()
         }
 
-        # Add one more recent scan at the same zone (still there)
         scan3 = {
-            "zone": zone_name,
+            "zone": zone_id,
+            "building_id": building_id,
             "timestamp": (entry_time + timedelta(seconds=random.randint(30, 180))).isoformat()
         }
 
         r.lpush(f"surge:{surge_id}:scans", json.dumps(scan1))
         r.lpush(f"surge:{surge_id}:scans", json.dumps(scan2))
         r.lpush(f"surge:{surge_id}:scans", json.dumps(scan3))
-        r.set(f"surge:{surge_id}:current_zone", zone_name, ex=3600)
+        r.set(f"surge:{surge_id}:current_zone", zone_id, ex=3600)
         r.expire(f"surge:{surge_id}:scans", 3600)
 
-        if (i + 1) % 10 == 0:  # Progress indicator
+        if (i + 1) % 10 == 0:
             print(f"  Created {i + 1}/{num_passengers} passengers...")
 
     formatted_ids = ", ".join(f'"{sid}"' for sid in created_ids)
     print("\n📦 Generated SURGE IDs:")
     print(f"{{ {formatted_ids} }}")
-    print(f"✅ Created {num_passengers} passengers at {zone_name}")
+    print(f"✅ Created {num_passengers} passengers in {building_id}:{zone_id}")
 
 
 def clear_all_test_data():
@@ -89,7 +153,6 @@ def clear_all_test_data():
     deleted = 0
     kept = 0
 
-    # Get all surge keys
     all_keys = []
     while True:
         cursor, keys = r.scan(cursor, match="surge:*", count=100)
@@ -97,32 +160,27 @@ def clear_all_test_data():
         if cursor == 0:
             break
 
-    # Find base SURGE IDs and sort by TTL (most recent have highest TTL)
     surge_ids_with_ttl = []
     for key in all_keys:
-        # Only look at base surge ID keys (not :scans, :current_zone, etc.)
-        if ":" not in key[6:]:  # surge:UUID (no additional :suffix)
+        if ":" not in key[6:]:
             surge_id = key.replace("surge:", "")
             ttl = r.ttl(key)
             if ttl > 0:
                 surge_ids_with_ttl.append((surge_id, ttl))
 
-    # Sort by TTL (highest = most recent)
     surge_ids_with_ttl.sort(key=lambda x: x[1], reverse=True)
 
-    # Keep the 3 most recent IDs (real passengers)
     keep_ids = set([sid for sid, _ in surge_ids_with_ttl[:3]])
 
     if keep_ids:
-        print(f"🔒 Keeping these real passenger IDs:")
+        print("🔒 Keeping these real passenger IDs:")
         for sid in keep_ids:
             print(f"   - {sid[:8]}... (TTL: {r.ttl(f'surge:{sid}')}s)")
 
-    # Delete everything except the ones we're keeping
     for key in all_keys:
         should_delete = True
         for keep_id in keep_ids:
-            if keep_id in key:  # Matches surge:ID, surge:ID:scans, etc.
+            if keep_id in key:
                 should_delete = False
                 break
 
@@ -140,11 +198,10 @@ if __name__ == "__main__":
     print("SURGE Test Data Generator")
     print("=" * 60)
 
-    # Create 100 people at terminal_entry
-    create_congestion_at_zone("boarding_gate", num_passengers=200)
+    # Example: create 200 people in airport-yvr at the cafeteria zone
+    create_congestion_at_zone(
+        "cafeteria", num_passengers=200, building_id="airport-yvr")
 
     print("\n" + "=" * 60)
     print("✅ Test data generation complete!")
     print("=" * 60)
-    print("\n🔍 Check congestion levels at: http://localhost:8000/zones")
-    print("🔍 Or refresh your passenger frontend!\n")

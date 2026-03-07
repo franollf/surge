@@ -157,6 +157,8 @@ def scan_checkpoint(scan: ScanRequest):
         ex=3600
     )
 
+    r.set(f"surge:{scan.surge_id}:current_building", scan.building_id, ex=3600)
+
     # Log scan event
     scan_event = {
         "zone": scan.zone_id,
@@ -254,23 +256,19 @@ def get_zone_heatmap(building_id: str):
 # ─────────────────────────────────────────────
 @app.get("/passenger/{surge_id}/zone")
 def get_passenger_zone(surge_id: str):
-
     status = r.get(f"surge:{surge_id}")
-
     if not status:
         raise HTTPException(
-            status_code=404,
-            detail="Invalid or expired SURGE ID"
-        )
+            status_code=404, detail="Invalid or expired SURGE ID")
 
-    current_zone = r.get(f"surge:{surge_id}:current_zone")
-
-    if not current_zone:
-        current_zone = "unknown"
+    current_zone = r.get(f"surge:{surge_id}:current_zone") or "unknown"
+    current_building = r.get(
+        f"surge:{surge_id}:current_building") or "unknown"  # Add this
 
     return {
         "surge_id": surge_id,
-        "current_zone": current_zone
+        "current_zone": current_zone,
+        "building_id": current_building  # Add this
     }
 
 

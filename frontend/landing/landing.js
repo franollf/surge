@@ -30,6 +30,17 @@ let state = {
   zones: []
 };
 
+function updateLinks() {
+  const id = document.getElementById('buildingId').value.trim();
+  const passenger = document.getElementById('openPassenger');
+  const admin = document.getElementById('openAdmin');
+
+  passenger.href = id ? `../passenger/index.html?building=${encodeURIComponent(id)}` : '#';
+admin.href = id ? `../admin/dashboard.html?building=${encodeURIComponent(id)}` : '../admin/dashboard.html';
+}
+
+document.getElementById('buildingId').addEventListener('input', updateLinks);
+updateLinks();
 /* ─────────────────────────────────────────────
    FLOOR SELECTS
 ───────────────────────────────────────────── */
@@ -204,19 +215,31 @@ qs("btnSave").addEventListener("click", async () => {
 });
 
 // 🔥 Auto-load building if coming from dashboard
-const buildingFromURL = getBuildingFromURL();
+async function autoLoadBuilding() {
+  const buildingFromURL = getBuildingFromURL();
 
-if (buildingFromURL) {
-  document.getElementById("buildingId").value = buildingFromURL;
+  if (buildingFromURL) {
+    document.getElementById("buildingId").value = buildingFromURL;
+    updateLinks();
 
-  const raw = localStorage.getItem(
-    `surge:building:${buildingFromURL}`
-  );
+    try {
+      const response = await fetch(
+        `http://localhost:8000/buildings/${buildingFromURL}/config`
+      );
 
-  if (raw) {
-    state = JSON.parse(raw);
+      if (!response.ok) throw new Error("Not found");
+
+      state = await response.json();
+      qs("buildingName").value = state.building_name || "";
+      toast("Building loaded ✔");
+
+    } catch (err) {
+      console.warn("No backend config found for", buildingFromURL);
+    }
   }
+
+  renderPreview();
+  refreshFloorSelects();
 }
 
-renderPreview();
-refreshFloorSelects();
+autoLoadBuilding();
