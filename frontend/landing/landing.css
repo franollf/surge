@@ -239,6 +239,20 @@ button.danger:hover {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   LINKS
+═══════════════════════════════════════════════════════════ */
+
+.link {
+  font-size: 12px;
+  color: #818cf8;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.link:hover { color: #a5b4fc; }
+
+/* ═══════════════════════════════════════════════════════════
    ZONE ROWS
 ═══════════════════════════════════════════════════════════ */
 
@@ -314,4 +328,249 @@ button.danger:hover {
 *:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ZONE INACTIVITY SCHEDULER
+═══════════════════════════════════════════════════════════ */
+
+.section-label {
+  margin: 32px 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #475569;
+}
+
+.scheduler-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .scheduler-grid { grid-template-columns: 1fr; }
+}
+
+.scheduler-card { height: fit-content; }
+
+/* ── Calendar Nav ── */
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.cal-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 2px 9px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1.4;
+}
+.cal-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+
+/* ── Calendar Grid ── */
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.cal-day:hover:not(.cal-empty):not(.cal-past) {
+  background: rgba(99,102,241,0.15);
+  border-color: rgba(99,102,241,0.3);
+  color: white;
+}
+
+.cal-day.cal-today {
+  color: #818cf8;
+  font-weight: 600;
+  border-color: rgba(99,102,241,0.25);
+}
+
+.cal-day.cal-selected {
+  background: rgba(99,102,241,0.85);
+  border-color: rgba(99,102,241,0.9);
+  color: white;
+  font-weight: 600;
+}
+
+.cal-day.cal-past {
+  color: #334155;
+  cursor: default;
+}
+
+.cal-day.cal-empty { cursor: default; }
+
+/* red dot on days with inactive zones */
+.cal-day.cal-has-inactive::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #f87171;
+}
+
+.cal-selected-label {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+}
+.cal-selected-label span { color: #a5b4fc; font-weight: 500; }
+
+/* ── Zone Schedule List ── */
+.zone-sched-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sched-empty {
+  font-size: 13px;
+  color: #475569;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.zone-sched-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.03);
+  transition: border-color 0.2s;
+}
+
+.zone-sched-row:hover { border-color: rgba(255,255,255,0.12); }
+
+.zone-sched-row.inactive-today {
+  border-color: rgba(239,68,68,0.2);
+  background: rgba(239,68,68,0.05);
+}
+
+.zone-sched-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zone-sched-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.zone-sched-floor {
+  font-size: 11px;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Toggle switch */
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  min-width: 48px;
+  text-align: right;
+}
+
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.toggle input { opacity: 0; width: 0; height: 0; }
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(239,68,68,0.4);
+  border: 1px solid rgba(239,68,68,0.5);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #f87171;
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.toggle input:checked + .toggle-slider {
+  background: rgba(16,185,129,0.3);
+  border-color: rgba(16,185,129,0.5);
+}
+
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(18px) translateY(-50%);
+  background: #34d399;
+}
+
+.sched-hint {
+  font-size: 11px;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }

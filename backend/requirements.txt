@@ -1,5 +1,8 @@
 fastapi
 uvicorn
+pydantic
+fastapi
+uvicorn
 redis
 python-dotenv
 qrcode[pil]
