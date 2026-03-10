@@ -47,3 +47,18 @@ async function getAuthToken() {
   const { data } = await sb.auth.getSession();
   return data.session?.access_token ?? null;
 }
+
+/**
+ * Make an authenticated API call with automatic token inclusion.
+ */
+async function authenticatedFetch(url, options = {}) {
+  const token = await getAuthToken();
+  
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`
+    }
+  });
+}

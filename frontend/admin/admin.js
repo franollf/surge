@@ -1,59 +1,58 @@
-/* ─────────────────────────────────────────────
-   SURGE Dashboard — admin.js
-───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   SURGE ADMIN DASHBOARD
+   Real-time congestion monitoring
+═══════════════════════════════════════════════════════════ */
 
-let allZones        = {};
-let currentBuilding = "";
-let buildingConfig  = null;
-let countdownSecs   = 30;
-let sessionSecs     = 0;
+let currentBuilding = null;
+let buildingConfig = null;
+let allZones = {};
+let countdownSecs = 30;
+let sessionSecs = 0;
+
+/* ─────────────────────────────────────────────
+   LIVE CLOCK
+───────────────────────────────────────────── */
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  const el = document.getElementById("live-clock");
+  if (el) el.textContent = `${h}:${m}:${s}`;
+}
 
 /* ─────────────────────────────────────────────
    TOAST
 ───────────────────────────────────────────── */
-function showToast(message, type = "info") {
-  const container = document.getElementById("toast-container");
-  if (!container) return;
-  const toast = document.createElement("div");
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("visible"));
-  setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
+function showToast(msg, type = "info") {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.className = `toast ${type} show`;
+  setTimeout(() => toast.classList.remove("show"), 3000);
 }
 
 /* ─────────────────────────────────────────────
-   CLOCK / COUNTDOWN / SESSION
+   AUTO-REFRESH COUNTDOWN
 ───────────────────────────────────────────── */
-function pad(n) { return String(n).padStart(2, "0"); }
-
-function updateClock() {
-  const now = new Date();
-  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  const dateStr = now.toLocaleDateString("en-GB", {
-    weekday: "short", day: "2-digit", month: "long", year: "numeric"
-  });
-  const clockEl = document.getElementById("live-clock");
-  const dateEl  = document.getElementById("live-date");
-  const lastEl  = document.getElementById("last-updated");
-  if (clockEl) clockEl.textContent = timeStr;
-  if (dateEl)  dateEl.textContent  = dateStr;
-  if (lastEl)  lastEl.textContent  = timeStr;
-}
-
 function tickCountdown() {
+  countdownSecs--;
   const el = document.getElementById("refresh-countdown");
   if (el) el.textContent = `${countdownSecs}s`;
-  countdownSecs--;
-  if (countdownSecs < 0) {
+
+  if (countdownSecs <= 0) {
     countdownSecs = 30;
     fetchZones();
   }
 }
 
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+/* ─────────────────────────────────────────────
+   SESSION TIMER
+───────────────────────────────────────────── */
 function tickSession() {
   sessionSecs++;
   const el = document.getElementById("session-timer");
@@ -75,22 +74,44 @@ document.getElementById("refresh-btn")?.addEventListener("click", () => {
 });
 
 /* ─────────────────────────────────────────────
-   LOAD BUILDINGS
+   LOAD BUILDINGS (WITH AUTH)
 ───────────────────────────────────────────── */
 async function loadBuildings() {
   try {
-    const res  = await fetch("http://localhost:8000/buildings");
+    const token = await getAuthToken();
+    
+    const res = await fetch("http://localhost:8000/buildings", {
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+    
+    if (!res.ok) throw new Error("Failed to fetch buildings");
+    
     const data = await res.json();
+    const buildings = data.buildings || [];
+    
+    // If user has no buildings, redirect to landing page
+    if (buildings.length === 0) {
+      showToast("No buildings found. Redirecting to create one...", "info");
+      setTimeout(() => {
+        window.location.href = "../landing/landing.html";
+      }, 2000);
+      return;
+    }
+    
     const select = document.getElementById("building-select");
     select.innerHTML = "";
-    data.buildings.forEach(id => {
+    
+    buildings.forEach(id => {
       const opt = document.createElement("option");
       opt.value = id;
       opt.textContent = id;
       select.appendChild(opt);
     });
-    if (data.buildings.length > 0) {
-      currentBuilding = data.buildings[0];
+    
+    if (buildings.length > 0) {
+      currentBuilding = buildings[0];
       select.value = currentBuilding;
       fetchZones();
     }
@@ -105,7 +126,16 @@ async function loadBuildings() {
 ───────────────────────────────────────────── */
 async function loadBuildingConfig(buildingId) {
   try {
-    const res = await fetch(`http://localhost:8000/buildings/${buildingId}/config`);
+    const token = await getAuthToken();
+    
+    const res = await fetch(`http://localhost:8000/buildings/${buildingId}/config`, {
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+    
+    if (!res.ok) throw new Error("Failed to fetch building config");
+    
     buildingConfig = await res.json();
     populateFloorDropdown();
   } catch (err) {
@@ -254,7 +284,11 @@ document.getElementById("search-zones")?.addEventListener("input", applyFilters)
    MANAGE BUILDING BUTTON
 ───────────────────────────────────────────── */
 document.getElementById("manage-building-btn")?.addEventListener("click", () => {
-  if (!currentBuilding) return;
+  if (!currentBuilding) {
+    // No building selected, go to landing to create one
+    window.location.href = "../landing/landing.html";
+    return;
+  }
   window.location.href = `../landing/landing.html?building=${encodeURIComponent(currentBuilding)}`;
 });
 

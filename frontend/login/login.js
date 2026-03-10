@@ -112,7 +112,7 @@ function clearMessage() {
 }
 
 function redirectToDashboard() {
-  window.location.href = "../admin/dashboard.html";
+  window.location.href = "../landing/landing.html";
 }
 
 // ── Wire up hint link on first load ───────────────

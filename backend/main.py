@@ -1,6 +1,6 @@
 # Surge Main.py
 from congestion import get_zone_congestion
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from storage import create_surge_id
@@ -12,6 +12,7 @@ from zone_scheduling import (
     get_active_zone_ids,
     is_zone_active,
 )
+from auth import verify_token
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -73,6 +74,7 @@ class BuildingConfig(BaseModel):
     default_floor_id: str
     floors: list
     zones: list
+    owner_id: Optional[str] = None
 
 
 class ZoneScheduleRequest(BaseModel):
@@ -127,233 +129,217 @@ def issue_surge_id():
 
 
 # ─────────────────────────────────────────────
-# Save Building Config
+# Save Building Config (WITH AUTH)
 # ─────────────────────────────────────────────
 @app.post("/buildings/{building_id}/config")
-def save_building_config(building_id: str, config: BuildingConfig):
+def save_building_config(
+    building_id: str,
+    config: BuildingConfig,
+    authorization: str = Header(None)
+):
+    print(f"📥 Saving building: {building_id}")
 
+    # ENFORCE authentication
+    user_id = verify_token(authorization)
+    print(f"✅ Authenticated user: {user_id}")
+
+    # Add owner to config
+    config_dict = config.dict()
+    config_dict['owner_id'] = user_id
+
+    # Save building config
     r.set(
         f"surge:building:{building_id}:config",
-        json.dumps(config.dict())
+        json.dumps(config_dict)
     )
 
-    return {"success": True}
+    # Maintain user->buildings index
+    r.sadd(f"surge:user:{user_id}:buildings", building_id)
+
+    print(f"✅ Building saved successfully for user {user_id}")
+
+    return {"success": True, "building_id": building_id, "owner_id": user_id}
 
 
 # ─────────────────────────────────────────────
-# Get Building Config
+# Get Building Config (WITH OWNERSHIP CHECK)
 # ─────────────────────────────────────────────
 @app.get("/buildings/{building_id}/config")
-def get_building_config(building_id: str):
+def get_building_config(
+    building_id: str,
+    authorization: str = Header(None)
+):
+    print(f"📤 Loading building: {building_id}")
+
+    # ENFORCE authentication
+    user_id = verify_token(authorization)
+    print(f"✅ Authenticated user: {user_id}")
 
     raw = r.get(f"surge:building:{building_id}:config")
 
     if not raw:
+        print(f"❌ Building not found: {building_id}")
         raise HTTPException(status_code=404, detail="No config found")
 
-    return json.loads(raw)
+    config = json.loads(raw)
+
+    # ENFORCE ownership check
+    if config.get('owner_id') != user_id:
+        print(
+            f"🚫 Access denied: User {user_id} tried to access building owned by {config.get('owner_id')}")
+        raise HTTPException(
+            status_code=403, detail="Access denied: You don't own this building")
+
+    print(f"✅ Building loaded: {building_id}")
+
+    return config
 
 
 # ─────────────────────────────────────────────
-# Scan Passenger
+# List Buildings (USER-SPECIFIC)
+# ─────────────────────────────────────────────
+@app.get("/buildings")
+def list_buildings(authorization: str = Header(None)):
+    """
+    Returns all building IDs owned by the authenticated user.
+    """
+    print("📋 Listing buildings")
+
+    # ENFORCE authentication
+    user_id = verify_token(authorization)
+    print(f"✅ Authenticated user: {user_id}")
+
+    # Get buildings for this specific user ONLY
+    building_ids = r.smembers(f"surge:user:{user_id}:buildings")
+
+    print(f"Found {len(building_ids)} buildings for user {user_id}")
+
+    return {"buildings": list(building_ids)}
+
+
+# ─────────────────────────────────────────────
+# Scan Endpoint
 # ─────────────────────────────────────────────
 @app.post("/scan")
-def scan_checkpoint(scan: ScanRequest):
+def record_scan(request: ScanRequest):
+    """
+    Record a passenger scanning into a zone.
+    """
+    surge_id = request.surge_id
+    zone_id = request.zone_id
+    building_id = request.building_id
 
     # Verify SURGE ID exists
-    status = r.get(f"surge:{scan.surge_id}")
+    if not r.exists(f"surge:{surge_id}"):
+        raise HTTPException(status_code=404, detail="Invalid SURGE ID")
 
-    if not status:
-        raise HTTPException(
-            status_code=404,
-            detail="Invalid or expired SURGE ID"
-        )
-
-    # Load building config
-    config_raw = r.get(
-        f"surge:building:{scan.building_id}:config"
-    )
-
-    if not config_raw:
-        raise HTTPException(
-            status_code=404,
-            detail="Building config not found"
-        )
-
-    config = json.loads(config_raw)
-
-    # Resolve zone_id — accepts either a zone_id or a zone_name
-    resolved_zone_id = resolve_zone_id(config["zones"], scan.zone_id)
-
-    if not resolved_zone_id:
-        available = ", ".join(
-            f'{z.get("zone_name", z["zone_id"])}' for z in config["zones"]
-        )
-        raise HTTPException(
-            status_code=400,
-            detail=f"Zone '{scan.zone_id}' not found. Available zones: {available}"
-        )
-
-    # Check if the zone is currently inactive
-    if not is_zone_active(r, scan.building_id, resolved_zone_id):
+    # Check if zone is active today
+    if not is_zone_active(r, building_id, zone_id):
         raise HTTPException(
             status_code=403,
-            detail=f"Zone '{resolved_zone_id}' is currently inactive and not accepting scans"
+            detail=f"Zone '{zone_id}' is inactive today"
         )
 
-    # Update passenger zone
-    r.set(
-        f"surge:{scan.surge_id}:current_zone",
-        resolved_zone_id,
-        ex=3600
-    )
+    # Get building config to resolve zone
+    config_raw = r.get(f"surge:building:{building_id}:config")
+    if not config_raw:
+        raise HTTPException(status_code=404, detail="Building not found")
 
-    r.set(f"surge:{scan.surge_id}:current_building", scan.building_id, ex=3600)
+    config = json.loads(config_raw)
+    resolved_zone_id = resolve_zone_id(config["zones"], zone_id)
 
-    # Log scan event
-    scan_event = {
+    if not resolved_zone_id:
+        raise HTTPException(
+            status_code=404, detail=f"Zone '{zone_id}' not found in building '{building_id}'")
+
+    # Record the scan
+    scan_data = {
         "zone": resolved_zone_id,
-        "building_id": scan.building_id,
+        "building_id": building_id,
         "timestamp": datetime.utcnow().isoformat()
     }
 
-    r.lpush(
-        f"surge:{scan.surge_id}:scans",
-        json.dumps(scan_event)
-    )
-    r.expire(f"surge:{scan.surge_id}:scans", 3600)
+    r.lpush(f"surge:{surge_id}:scans", json.dumps(scan_data))
+    r.set(f"surge:{surge_id}:current_zone", resolved_zone_id, ex=3600)
+    r.expire(f"surge:{surge_id}:scans", 3600)
 
     return {
         "success": True,
-        "surge_id": scan.surge_id,
-        "zone_input": scan.zone_id,
-        "current_zone": resolved_zone_id
+        "surge_id": surge_id,
+        "zone_id": resolved_zone_id,
+        "building_id": building_id,
+        "timestamp": scan_data["timestamp"]
     }
 
 
 # ─────────────────────────────────────────────
-# Bulk Scan
+# Bulk Scan Endpoint
 # ─────────────────────────────────────────────
 @app.post("/scan/bulk")
-def scan_multiple_passengers(scan: BulkScanRequest):
+def record_bulk_scan(request: BulkScanRequest):
+    """
+    Record multiple passengers scanning into the same zone at once.
+    """
+    zone_id = request.zone_id
+    building_id = request.building_id
+    surge_ids = request.surge_ids
 
-    config_raw = r.get(
-        f"surge:building:{scan.building_id}:config"
-    )
-
+    # Verify building exists
+    config_raw = r.get(f"surge:building:{building_id}:config")
     if not config_raw:
-        raise HTTPException(
-            status_code=404,
-            detail="Building config not found"
-        )
+        raise HTTPException(status_code=404, detail="Building not found")
 
     config = json.loads(config_raw)
-
-    # Resolve zone name → ID for bulk scans too
-    resolved_zone_id = resolve_zone_id(config["zones"], scan.zone_id)
+    resolved_zone_id = resolve_zone_id(config["zones"], zone_id)
 
     if not resolved_zone_id:
-        available = ", ".join(
-            f'{z.get("zone_name", z["zone_id"])}' for z in config["zones"]
-        )
         raise HTTPException(
-            status_code=400,
-            detail=f"Zone '{scan.zone_id}' not found. Available zones: {available}"
+            status_code=404, detail=f"Zone '{zone_id}' not found")
+
+    # Check if zone is active
+    if not is_zone_active(r, building_id, resolved_zone_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Zone '{resolved_zone_id}' is inactive today"
         )
 
-    updated = []
-    failed = []
+    results = []
+    timestamp = datetime.utcnow().isoformat()
 
-    for surge_id in scan.surge_ids:
-
-        status = r.get(f"surge:{surge_id}")
-
-        if not status:
-            failed.append(surge_id)
+    for surge_id in surge_ids:
+        if not r.exists(f"surge:{surge_id}"):
+            results.append(
+                {"surge_id": surge_id, "success": False, "error": "Invalid SURGE ID"})
             continue
 
-        r.set(
-            f"surge:{surge_id}:current_zone",
-            resolved_zone_id,
-            ex=3600
-        )
-
-        scan_event = {
+        scan_data = {
             "zone": resolved_zone_id,
-            "building_id": scan.building_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "building_id": building_id,
+            "timestamp": timestamp
         }
 
-        r.lpush(
-            f"surge:{surge_id}:scans",
-            json.dumps(scan_event)
-        )
+        r.lpush(f"surge:{surge_id}:scans", json.dumps(scan_data))
+        r.set(f"surge:{surge_id}:current_zone", resolved_zone_id, ex=3600)
         r.expire(f"surge:{surge_id}:scans", 3600)
 
-        updated.append(surge_id)
+        results.append({"surge_id": surge_id, "success": True})
 
     return {
-        "success": True,
-        "zone_input": scan.zone_id,
-        "zone_id": resolved_zone_id,
-        "updated_count": len(updated),
-        "failed_count": len(failed)
+        "total": len(surge_ids),
+        "successful": sum(1 for r in results if r["success"]),
+        "results": results
     }
 
 
 # ─────────────────────────────────────────────
-# Congestion Endpoint
+# Congestion Data
 # ─────────────────────────────────────────────
 @app.get("/congestion/{building_id}")
-def get_zone_heatmap(building_id: str):
-    active_zones = get_active_zone_ids(r, building_id)
-    return get_zone_congestion(r, building_id, active_zones=active_zones)
-
-
-# ─────────────────────────────────────────────
-# Passenger Current Zone
-# ─────────────────────────────────────────────
-@app.get("/passenger/{surge_id}/zone")
-def get_passenger_zone(surge_id: str):
-    status = r.get(f"surge:{surge_id}")
-    if not status:
-        raise HTTPException(
-            status_code=404, detail="Invalid or expired SURGE ID")
-
-    current_zone = r.get(f"surge:{surge_id}:current_zone") or "unknown"
-    current_building = r.get(
-        f"surge:{surge_id}:current_building") or "unknown"
-
-    return {
-        "surge_id": surge_id,
-        "current_zone": current_zone,
-        "building_id": current_building
-    }
-
-
-@app.get("/buildings")
-def list_buildings():
+def get_congestion(building_id: str):
     """
-    Returns all building IDs stored in Redis.
+    Get real-time congestion data for all zones in a building.
     """
-    cursor = 0
-    buildings = []
-
-    while True:
-        cursor, keys = r.scan(
-            cursor,
-            match="surge:building:*:config",
-            count=100
-        )
-
-        for key in keys:
-            building_id = key.split(":")[2]
-            buildings.append(building_id)
-
-        if cursor == 0:
-            break
-
-    return {"buildings": buildings}
+    return get_zone_congestion(r, building_id)
 
 
 # ─────────────────────────────────────────────
@@ -376,11 +362,11 @@ def schedule_zone_inactive(building_id: str, data: ZoneScheduleRequest):
 
 
 @app.delete("/buildings/{building_id}/zones/schedule-inactive")
-def unschedule_zone_inactive(building_id: str, data: ZoneScheduleRequest):
+def unschedule_zone_inactive(building_id: str, zone_id: str, date: str = Query(...)):
     """
-    Remove a previously scheduled inactive date for a zone.
+    Remove an inactive schedule for a zone on a specific date.
     """
-    result = remove_zone_inactive(r, building_id, data.zone_id, data.date)
+    result = remove_zone_inactive(r, building_id, zone_id, date)
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -389,41 +375,18 @@ def unschedule_zone_inactive(building_id: str, data: ZoneScheduleRequest):
 
 
 @app.get("/buildings/{building_id}/zones/inactive")
-def list_inactive_zones(
-    building_id: str,
-    date: Optional[str] = Query(
-        default=None,
-        description="Date in YYYY-MM-DD format. Defaults to today."
-    )
-):
+def get_inactive_zones(building_id: str, date: str = Query(None)):
     """
-    List all zones that are scheduled as inactive for a given date.
+    Get all inactive zones for a building on a specific date (or all dates).
     """
-    inactive = get_inactive_zones_for_building(
-        r, building_id, target_date=date)
-    return {
-        "building_id": building_id,
-        "date": date or "today",
-        "inactive_zones": inactive,
-        "count": len(inactive)
-    }
+    zones = get_inactive_zones_for_building(r, building_id, date)
+    return {"inactive_zones": zones}
 
 
 @app.get("/buildings/{building_id}/zones/active")
-def list_active_zones(
-    building_id: str,
-    date: Optional[str] = Query(
-        default=None,
-        description="Date in YYYY-MM-DD format. Defaults to today."
-    )
-):
+def get_active_zones(building_id: str):
     """
-    Get all zones that are currently active (not scheduled inactive).
+    Get all currently active zone IDs for a building (filters out today's inactive zones).
     """
-    active = get_active_zone_ids(r, building_id, target_date=date)
-    return {
-        "building_id": building_id,
-        "date": date or "today",
-        "active_zone_ids": sorted(active),
-        "count": len(active)
-    }
+    active_ids = get_active_zone_ids(r, building_id)
+    return {"active_zone_ids": active_ids}
