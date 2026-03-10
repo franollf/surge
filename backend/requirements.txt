@@ -5,3 +5,9 @@ io
 qrcode
 uvicorn
 pydantic
+fastapi
+uvicorn
+redis
+python-dotenv
+qrcode[pil]
+pydantic

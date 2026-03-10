@@ -90,6 +90,7 @@ async function fetchZones() {
   try {
     await loadBuildingConfig(currentBuilding);
 
+    const t0 = performance.now();
     const response = await fetch(
       `http://localhost:8000/congestion/${currentBuilding}`
     );
@@ -99,6 +100,9 @@ async function fetchZones() {
     }
 
     const data = await response.json();
+    const latencyMs = Math.round(performance.now() - t0);
+    const rtEl = document.getElementById("kpi-rt");
+    if (rtEl) rtEl.textContent = `${latencyMs} ms`;
     const backendZones = data.zones || {};
 
     // 🔥 Merge metadata from building config
@@ -132,15 +136,23 @@ async function fetchZones() {
 ───────────────────────────────────────────── */
 
 function updateKPIs(zones) {
-  const zoneCount = Object.keys(zones).length;
+  const values = Object.values(zones);
+  const zoneCount = values.length;
 
   const totalActivePassengers =
-    Object.values(zones)
-      .reduce((sum, z) => sum + (z.active_passengers || 0), 0);
+    values.reduce((sum, z) => sum + (z.active_passengers || 0), 0);
 
   const highZones =
-    Object.values(zones)
-      .filter(z => z.congestion_level === "HIGH").length;
+    values.filter(z => z.congestion_level === "HIGH").length;
+
+  // Avg wait time across zones that have passengers
+  const activeZones = values.filter(z => (z.active_passengers || 0) > 0);
+  const avgWait = activeZones.length
+    ? Math.round(
+        activeZones.reduce((sum, z) => sum + (z.estimated_wait_minutes || 0), 0)
+        / activeZones.length
+      )
+    : 0;
 
   document.getElementById("kpi-zones").textContent = zoneCount;
   document.getElementById("kpi-users").textContent = totalActivePassengers;
@@ -184,29 +196,54 @@ function renderZones(zones) {
 ───────────────────────────────────────────── */
 
 function applyFilters() {
-  let filtered = { ...allZones };
+  let entries = Object.entries(allZones);
 
-  const floorFilter =
-    document.getElementById("filter-floor")?.value;
-
+  // ── Floor filter
+  const floorFilter = document.getElementById("filter-floor")?.value;
   if (floorFilter && floorFilter !== "all") {
-    filtered = Object.fromEntries(
-      Object.entries(filtered).filter(
-        ([_, zone]) => zone.floor_id === floorFilter
-      )
+    entries = entries.filter(([_, z]) => z.floor_id === floorFilter);
+  }
+
+  // ── Status filter
+  const statusFilter = document.getElementById("filter-status")?.value;
+  if (statusFilter && statusFilter !== "all") {
+    entries = entries.filter(
+      ([_, z]) => (z.congestion_level || "LOW").toLowerCase() === statusFilter
     );
   }
 
-  renderZones(filtered);
+  // ── Search filter
+  const search = document.getElementById("search-zones")?.value?.toLowerCase().trim();
+  if (search) {
+    entries = entries.filter(([id, z]) =>
+      (z.zone_name || id).toLowerCase().includes(search)
+    );
+  }
+
+  // ── Sort
+  const sort = document.getElementById("sort-zones")?.value;
+  if (sort === "name") {
+    entries.sort(([_a, a], [_b, b]) =>
+      (a.zone_name || _a).localeCompare(b.zone_name || _b)
+    );
+  } else if (sort === "load") {
+    entries.sort(([_, a], [__, b]) =>
+      (b.congestion_score || 0) - (a.congestion_score || 0)
+    );
+  } else if (sort === "wait") {
+    entries.sort(([_, a], [__, b]) =>
+      (b.estimated_wait_minutes || 0) - (a.estimated_wait_minutes || 0)
+    );
+  }
+
+  renderZones(Object.fromEntries(entries));
 }
 
 const manageBtn = document.getElementById("manage-building-btn");
-
 if (manageBtn) {
   manageBtn.addEventListener("click", () => {
     const building = getSelectedBuilding();
     if (!building) return;
-
     window.location.href =
       `../landing/landing.html?building=${encodeURIComponent(building)}`;
   });
@@ -216,21 +253,75 @@ if (manageBtn) {
    EVENTS
 ───────────────────────────────────────────── */
 
-if (document.getElementById("building-select")) {
-  document
-    .getElementById("building-select")
-    .addEventListener("change", fetchZones);
-}
+["building-select", "filter-floor", "filter-status", "sort-zones"].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("change", id === "building-select" ? fetchZones : applyFilters);
+});
 
-if (document.getElementById("filter-floor")) {
-  document
-    .getElementById("filter-floor")
-    .addEventListener("change", applyFilters);
-}
-
-setInterval(fetchZones, 3000);
+const searchEl = document.getElementById("search-zones");
+if (searchEl) searchEl.addEventListener("input", applyFilters);
 
 window.refreshDashboard = fetchZones;
 
 /* Initial load */
 loadBuildings();
+
+/* ─────────────────────────────────────────────
+   CLOCK, DATE, COUNTDOWN & SESSION TIMER
+───────────────────────────────────────────── */
+
+let countdownSeconds = 30;
+let sessionSeconds   = 0;
+
+function padTwo(n) { return String(n).padStart(2, "0"); }
+
+function updateClock() {
+  const now = new Date();
+  const h = padTwo(now.getHours());
+  const m = padTwo(now.getMinutes());
+  const s = padTwo(now.getSeconds());
+
+  const clockEl = document.getElementById("live-clock");
+  if (clockEl) clockEl.textContent = `${h}:${m}:${s}`;
+
+  const dateEl = document.getElementById("live-date");
+  if (dateEl) dateEl.textContent = now.toLocaleDateString("en-GB", {
+    weekday: "short", day: "2-digit", month: "long", year: "numeric"
+  });
+
+  const lastEl = document.getElementById("last-updated");
+  if (lastEl) lastEl.textContent = `${h}:${m}:${s}`;
+}
+
+function updateCountdown() {
+  const el = document.getElementById("refresh-countdown");
+  if (el) el.textContent = `${countdownSeconds}s`;
+  countdownSeconds--;
+  if (countdownSeconds < 0) {
+    countdownSeconds = 30;
+    fetchZones();
+  }
+}
+
+function updateSessionTimer() {
+  sessionSeconds++;
+  const mm = padTwo(Math.floor(sessionSeconds / 60));
+  const ss = padTwo(sessionSeconds % 60);
+  const el = document.getElementById("session-timer");
+  if (el) el.textContent = `${mm}:${ss}`;
+}
+
+const refreshBtn = document.getElementById("refresh-btn");
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", () => {
+    countdownSeconds = 30;
+    fetchZones();
+  });
+}
+
+setInterval(updateClock,         1000);
+setInterval(updateCountdown,     1000);
+setInterval(updateSessionTimer,  1000);
+
+updateClock(); // run immediately — no 1s blank

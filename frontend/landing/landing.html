@@ -94,22 +94,64 @@
         <div class="card">
           <div class="head">
             <h2>Floors & Zones</h2>
-            <a class="link" id="openPassenger" href="#" target="_blank">
-              Open Passenger →
-            </a>
-            <a class="link" id="openAdmin" href="admin.html" target="_blank">
-              Open Admin →
-            </a>
+            <div style="display: flex; gap: 10px; align-items: center">
+              <a class="link" id="openPassenger" href="#" target="_blank"
+                >Open Passenger →</a
+              >
+              <a class="link" id="openAdmin" href="#" target="_blank"
+                >Open Admin →</a
+              >
+            </div>
           </div>
           <div class="body">
             <div id="preview" class="list"></div>
           </div>
         </div>
       </div>
+
+      <!-- ── Zone Inactivity Scheduler ── -->
+      <div class="section-label">Zone Inactivity Scheduler</div>
+      <div class="scheduler-grid">
+        <!-- Calendar -->
+        <div class="card scheduler-card">
+          <div class="head">
+            <h2>Select Date</h2>
+            <div class="cal-nav">
+              <button class="cal-btn" id="calPrev">‹</button>
+              <span id="calMonthLabel"></span>
+              <button class="cal-btn" id="calNext">›</button>
+            </div>
+          </div>
+          <div class="body">
+            <div class="cal-weekdays">
+              <span>Su</span><span>Mo</span><span>Tu</span> <span>We</span
+              ><span>Th</span><span>Fr</span><span>Sa</span>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+            <div class="cal-selected-label">
+              Selected: <span id="calSelectedDisplay">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Zone Toggles -->
+        <div class="card scheduler-card">
+          <div class="head">
+            <h2>Zone Status</h2>
+            <span class="sched-hint" id="schedHint">Pick a date</span>
+          </div>
+          <div class="body">
+            <div id="zoneScheduleList" class="zone-sched-list">
+              <div class="sched-empty">
+                Select a date to manage zone availability.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div id="toast" class="toast"></div>
-
     <script src="landing.js"></script>
   </body>
 </html>
