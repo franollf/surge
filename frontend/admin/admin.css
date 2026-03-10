@@ -3,7 +3,7 @@
 body {
     margin: 0;
     font-family: "Inter", Arial, sans-serif;
-    background: #0b1220;
+    background: #040f0f;
     color: white;
     display: flex;
     flex-direction: column;
@@ -36,63 +36,67 @@ header p {
     width: 90%;
     max-width: 1200px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 30px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
     justify-content: center;
 }
 
 /* ---------- Zone Tile ---------- */
 
 .zone-tile {
-    padding: 28px;
-    border-radius: 100px;               /* rounded */
-    min-height: 300px;
+    padding: 16px 18px 16px 20px;
+    border-radius: 10px;
+    min-height: unset;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-left: 3px solid transparent;
 
-    display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
 
-    transition: all 0.3s ease;
-    box-shadow: 0 15px 35px rgba(0,0,0,0.4);
-    text-align: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    text-align: left;
+    color: white;
 }
 
-/* ---------- Heatmap Colors ---------- */
+/* ---------- Heatmap Colors — left slit only ---------- */
 
-/* LOW */
-.low {
-    background: linear-gradient(145deg, #064e3b, #10b981);
-}
-
-/* MEDIUM */
-.medium {
-    background: linear-gradient(145deg, #78350f, #facc15);
-    color: #111827;
-}
-
-/* HIGH */
-.high {
-    background: linear-gradient(145deg, #7f1d1d, #ef4444);
-}
+.low    { border-left-color: #10b981; }
+.medium { border-left-color: #facc15; color: white; }
+.high   { border-left-color: #ef4444; }
 
 /* ---------- Text Inside Tile ---------- */
 
 .zone-title {
-    font-size: 22px;
-    font-weight: 600;
-    margin-bottom: 15px;
-    letter-spacing: 1px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
 }
+
+.low    .zone-title { color: #34d399; }
+.medium .zone-title { color: #fbbf24; }
+.high   .zone-title { color: #f87171; }
 
 .zone-metric {
-    font-size: 15px;
-    margin: 4px 0;
+    font-size: 12px;
+    margin: 3px 0;
+    color: #475569;
 }
 
-/* ---------- Optional Subtle Hover ---------- */
+.zone-metric strong {
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+/* ---------- Hover ---------- */
 
 .zone-tile:hover {
-    transform: translateY(-5px);
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -246,7 +250,7 @@ header p {
     transition: border-color 0.2s;
 }
 #controls-bar select:focus,
-#controls-bar input[type="text"]:focus { border-color: rgba(99,102,241,0.6); }
+#controls-bar input[type="text"]:focus { border-color: rgba(45,212,191,0.6); }
 
 .icon-btn {
     background: rgba(255,255,255,0.05);
@@ -305,7 +309,7 @@ header p {
     max-width: 280px;
 }
 .toast.visible  { opacity: 1; transform: translateX(0); }
-.toast-info     { background: rgba(99,102,241,0.85);  border: 1px solid rgba(99,102,241,0.5); }
+.toast-info     { background: rgba(45,212,191,0.85);  border: 1px solid rgba(45,212,191,0.5); }
 .toast-success  { background: rgba(16,185,129,0.85);  border: 1px solid rgba(16,185,129,0.5); }
 .toast-warning  { background: rgba(250,204,21,0.85);  border: 1px solid rgba(250,204,21,0.5); color: #1a1a1a; }
 .toast-error    { background: rgba(239,68,68,0.85);   border: 1px solid rgba(239,68,68,0); }
@@ -314,9 +318,9 @@ header p {
 /* Building Selector Styling */
 
 header select#building-select {
-  background-color: #1a1f2e;
+  background-color: #0d2420;
   color: #fff;
-  border: 1px solid #2c3245;
+  border: 1px solid #0f3d38;
   padding: 6px 10px;
   border-radius: 6px;
   margin-left: 8px;
@@ -325,8 +329,8 @@ header select#building-select {
 
 header select#building-select:focus {
   outline: none;
-  border-color: #4c8dff;
-  box-shadow: 0 0 0 2px rgba(76, 141, 255, 0.2);
+  border-color: #2dd4bf;
+  box-shadow: 0 0 0 2px rgba(45,212,191,0.2);
 }
 
 #manage-building-btn {

@@ -82,6 +82,33 @@ class ZoneScheduleRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────
+# Zone Name → ID Resolution
+# ─────────────────────────────────────────────
+
+def resolve_zone_id(zones: list, zone_input: str) -> str | None:
+    """
+    Accepts a zone_id or zone_name and returns the matching zone_id.
+    Tries: exact zone_id → case-insensitive zone_name → case-insensitive zone_id.
+    Returns None if no match found.
+    """
+    zone_lower = zone_input.strip().lower()
+
+    for z in zones:
+        if z.get("zone_id") == zone_input:
+            return z["zone_id"]
+
+    for z in zones:
+        if (z.get("zone_name") or "").strip().lower() == zone_lower:
+            return z["zone_id"]
+
+    for z in zones:
+        if (z.get("zone_id") or "").strip().lower() == zone_lower:
+            return z["zone_id"]
+
+    return None
+
+
+# ─────────────────────────────────────────────
 # Issue SURGE ID
 # ─────────────────────────────────────────────
 @app.get("/issue")
@@ -155,25 +182,29 @@ def scan_checkpoint(scan: ScanRequest):
 
     config = json.loads(config_raw)
 
-    valid_zone_ids = {z["zone_id"] for z in config["zones"]}
+    # Resolve zone_id — accepts either a zone_id or a zone_name
+    resolved_zone_id = resolve_zone_id(config["zones"], scan.zone_id)
 
-    if scan.zone_id not in valid_zone_ids:
+    if not resolved_zone_id:
+        available = ", ".join(
+            f'{z.get("zone_name", z["zone_id"])}' for z in config["zones"]
+        )
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid zone_id: {scan.zone_id}"
+            detail=f"Zone '{scan.zone_id}' not found. Available zones: {available}"
         )
 
     # Check if the zone is currently inactive
-    if not is_zone_active(r, scan.building_id, scan.zone_id):
+    if not is_zone_active(r, scan.building_id, resolved_zone_id):
         raise HTTPException(
             status_code=403,
-            detail=f"Zone '{scan.zone_id}' is currently inactive and not accepting scans"
+            detail=f"Zone '{resolved_zone_id}' is currently inactive and not accepting scans"
         )
 
     # Update passenger zone
     r.set(
         f"surge:{scan.surge_id}:current_zone",
-        scan.zone_id,
+        resolved_zone_id,
         ex=3600
     )
 
@@ -181,7 +212,7 @@ def scan_checkpoint(scan: ScanRequest):
 
     # Log scan event
     scan_event = {
-        "zone": scan.zone_id,
+        "zone": resolved_zone_id,
         "building_id": scan.building_id,
         "timestamp": datetime.utcnow().isoformat()
     }
@@ -195,7 +226,8 @@ def scan_checkpoint(scan: ScanRequest):
     return {
         "success": True,
         "surge_id": scan.surge_id,
-        "current_zone": scan.zone_id
+        "zone_input": scan.zone_id,
+        "current_zone": resolved_zone_id
     }
 
 
@@ -216,12 +248,17 @@ def scan_multiple_passengers(scan: BulkScanRequest):
         )
 
     config = json.loads(config_raw)
-    valid_zone_ids = {z["zone_id"] for z in config["zones"]}
 
-    if scan.zone_id not in valid_zone_ids:
+    # Resolve zone name → ID for bulk scans too
+    resolved_zone_id = resolve_zone_id(config["zones"], scan.zone_id)
+
+    if not resolved_zone_id:
+        available = ", ".join(
+            f'{z.get("zone_name", z["zone_id"])}' for z in config["zones"]
+        )
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid zone_id: {scan.zone_id}"
+            detail=f"Zone '{scan.zone_id}' not found. Available zones: {available}"
         )
 
     updated = []
@@ -237,12 +274,12 @@ def scan_multiple_passengers(scan: BulkScanRequest):
 
         r.set(
             f"surge:{surge_id}:current_zone",
-            scan.zone_id,
+            resolved_zone_id,
             ex=3600
         )
 
         scan_event = {
-            "zone": scan.zone_id,
+            "zone": resolved_zone_id,
             "building_id": scan.building_id,
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -257,7 +294,8 @@ def scan_multiple_passengers(scan: BulkScanRequest):
 
     return {
         "success": True,
-        "zone_id": scan.zone_id,
+        "zone_input": scan.zone_id,
+        "zone_id": resolved_zone_id,
         "updated_count": len(updated),
         "failed_count": len(failed)
     }
@@ -284,12 +322,12 @@ def get_passenger_zone(surge_id: str):
 
     current_zone = r.get(f"surge:{surge_id}:current_zone") or "unknown"
     current_building = r.get(
-        f"surge:{surge_id}:current_building") or "unknown"  # Add this
+        f"surge:{surge_id}:current_building") or "unknown"
 
     return {
         "surge_id": surge_id,
         "current_zone": current_zone,
-        "building_id": current_building  # Add this
+        "building_id": current_building
     }
 
 
@@ -361,7 +399,8 @@ def list_inactive_zones(
     """
     List all zones that are scheduled as inactive for a given date.
     """
-    inactive = get_inactive_zones_for_building(r, building_id, target_date=date)
+    inactive = get_inactive_zones_for_building(
+        r, building_id, target_date=date)
     return {
         "building_id": building_id,
         "date": date or "today",
