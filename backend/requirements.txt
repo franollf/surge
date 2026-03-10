@@ -1,7 +1,6 @@
-datetime
 fastapi
-redis
-io
-qrcode
 uvicorn
+redis
+python-dotenv
+qrcode[pil]
 pydantic
