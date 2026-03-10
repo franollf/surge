@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>SURGE Admin — Building Config</title>
     <link rel="stylesheet" href="landing.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../shared/config.js"></script>
+    <script src="../shared/auth.js"></script>
   </head>
   <body>
     <div class="wrap">
@@ -15,10 +18,18 @@
             Create <b>floors</b> and <b>zones</b> for any building.
           </div>
         </div>
-
-        <div class="pill">
-          <label for="buildingId">Building ID</label>
-          <input id="buildingId" class="mono" placeholder="airport-yvr" />
+        <div style="display: flex; align-items: center; gap: 10px">
+          <button
+            class="secondary"
+            onclick="signOut()"
+            style="font-size: 12px; padding: 6px 12px"
+          >
+            Sign Out
+          </button>
+          <div class="pill">
+            <label for="buildingId">Building ID</label>
+            <input id="buildingId" class="mono" placeholder="airport-yvr" />
+          </div>
         </div>
       </div>
 
@@ -152,6 +163,10 @@
     </div>
 
     <div id="toast" class="toast"></div>
+
+    <script>
+      requireAuth();
+    </script>
     <script src="landing.js"></script>
   </body>
 </html>

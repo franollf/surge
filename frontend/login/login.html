@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SURGE — Admin Login</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../shared/config.js"></script>
+    <link rel="stylesheet" href="login.css" />
+  </head>
+  <body>
+    <div class="card">
+      <div class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+        </div>
+        <div>
+          <div class="logo-text">SURGE</div>
+          <div class="logo-sub">Admin Portal</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" id="tab-login" onclick="switchTab('login')">
+          Sign In
+        </div>
+        <div class="tab" id="tab-signup" onclick="switchTab('signup')">
+          Create Account
+        </div>
+      </div>
+
+      <div id="name-group" class="form-group">
+        <label for="full-name">Full Name</label>
+        <input
+          type="text"
+          id="full-name"
+          placeholder="Your name"
+          autocomplete="name"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input
+          type="email"
+          id="email"
+          placeholder="admin@yourorg.com"
+          autocomplete="email"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+        />
+      </div>
+
+      <button class="btn" id="submit-btn" onclick="handleSubmit()">
+        Sign In
+      </button>
+
+      <div class="message" id="message"></div>
+
+      <div class="hint" id="hint-text">
+        Don't have an account? <a href="#" id="hint-link">Create one</a>
+      </div>
+    </div>
+
+    <script src="../shared/config.js"></script>
+    <script src="login.js"></script>
+  </body>
+</html>
