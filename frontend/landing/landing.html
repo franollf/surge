@@ -6,8 +6,6 @@
     <title>SURGE Admin — Building Config</title>
     <link rel="stylesheet" href="landing.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="../shared/config.js"></script>
-    <script src="../shared/auth.js"></script>
   </head>
   <body>
     <div class="wrap">
@@ -129,27 +127,32 @@
             <h2>Select Date</h2>
             <div class="cal-nav">
               <button class="cal-btn" id="calPrev">‹</button>
-              <span id="calMonthLabel"></span>
+              <div id="calMonthYear"></div>
               <button class="cal-btn" id="calNext">›</button>
             </div>
           </div>
           <div class="body">
             <div class="cal-weekdays">
-              <span>Su</span><span>Mo</span><span>Tu</span> <span>We</span
-              ><span>Th</span><span>Fr</span><span>Sa</span>
+              <div>Sun</div>
+              <div>Mon</div>
+              <div>Tue</div>
+              <div>Wed</div>
+              <div>Thu</div>
+              <div>Fri</div>
+              <div>Sat</div>
             </div>
-            <div class="cal-grid" id="calGrid"></div>
+            <div class="cal-grid" id="calendar"></div>
             <div class="cal-selected-label">
-              Selected: <span id="calSelectedDisplay">—</span>
+              Selected: <span id="calSelectedDisplay">None</span>
             </div>
           </div>
         </div>
 
-        <!-- Zone Toggles -->
+        <!-- Zone Schedule -->
         <div class="card scheduler-card">
           <div class="head">
-            <h2>Zone Status</h2>
-            <span class="sched-hint" id="schedHint">Pick a date</span>
+            <h2>Zone Availability</h2>
+            <div class="sched-hint" id="schedHint">Select a date</div>
           </div>
           <div class="body">
             <div id="zoneScheduleList" class="zone-sched-list">
@@ -164,6 +167,9 @@
 
     <div id="toast" class="toast"></div>
 
+    <!-- Load scripts in correct order -->
+    <script src="../shared/config.js"></script>
+    <script src="../shared/auth.js"></script>
     <script>
       requireAuth();
     </script>

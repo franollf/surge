@@ -53,65 +53,32 @@ function updateLinks() {
   admin.href = id ? `../admin/dashboard.html?building=${encodeURIComponent(id)}` : "../admin/dashboard.html";
 }
 
-qs("buildingId").addEventListener("input", () => {
-  updateLinks();
-  // refresh scheduler if a date is selected
-  if (calSelectedDate) {
-    renderZoneScheduleList(getBuildingId(), calSelectedDate);
-    scanMonthForInactive(getBuildingId());
-  }
-});
-
-updateLinks();
-
-/* ═══════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════��════
    FLOOR SELECTS
 ═══════════════════════════════════════════════════════════ */
 
 function refreshFloorSelects() {
-  const zoneFloor = qs("zoneFloor");
-  const defaultFloor = qs("defaultFloor");
+  const defaultFloorSelect = qs("defaultFloor");
+  const zoneFloorSelect = qs("zoneFloor");
 
-  zoneFloor.innerHTML = "";
-  defaultFloor.innerHTML = "";
+  defaultFloorSelect.innerHTML = "";
+  zoneFloorSelect.innerHTML = "";
 
   state.floors.forEach(floor => {
     const opt1 = document.createElement("option");
     opt1.value = floor.floor_id;
     opt1.textContent = floor.floor_name;
-    zoneFloor.appendChild(opt1);
+    defaultFloorSelect.appendChild(opt1);
 
     const opt2 = document.createElement("option");
     opt2.value = floor.floor_id;
     opt2.textContent = floor.floor_name;
-    defaultFloor.appendChild(opt2);
+    zoneFloorSelect.appendChild(opt2);
   });
 
-  if (state.floors.length > 0) {
-    zoneFloor.value = state.floors[0].floor_id;
-    defaultFloor.value = state.default_floor_id || state.floors[0].floor_id;
+  if (state.default_floor_id) {
+    defaultFloorSelect.value = state.default_floor_id;
   }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   DELETE
-═══════════════════════════════════════════════════════════ */
-
-function deleteZone(zoneId) {
-  state.zones = state.zones.filter(z => z.zone_id !== zoneId);
-  renderPreview();
-}
-
-function deleteFloor(floorId) {
-  state.floors = state.floors.filter(f => f.floor_id !== floorId);
-  state.zones = state.zones.filter(z => z.floor_id !== floorId);
-
-  if (state.default_floor_id === floorId) {
-    state.default_floor_id = state.floors[0]?.floor_id || "";
-  }
-
-  refreshFloorSelects();
-  renderPreview();
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -122,36 +89,38 @@ function renderPreview() {
   const preview = qs("preview");
   preview.innerHTML = "";
 
-  state.floors.forEach(floor => {
-    const wrapper = document.createElement("div");
-    wrapper.className = "floor";
+  if (state.floors.length === 0) {
+    preview.innerHTML = '<div class="empty">No floors yet</div>';
+    return;
+  }
 
-    const header = document.createElement("div");
-    header.className = "zone";
-    header.innerHTML = `
-      <strong>${floor.floor_name}</strong>
-      <button onclick="deleteFloor('${floor.floor_id}')">Delete Floor</button>
-    `;
-    wrapper.appendChild(header);
+  state.floors.forEach(floor => {
+    const floorDiv = document.createElement("div");
+    floorDiv.className = "floor-group";
+
+    const floorTitle = document.createElement("div");
+    floorTitle.className = "floor-title";
+    floorTitle.textContent = floor.floor_name;
+    floorDiv.appendChild(floorTitle);
 
     const zonesForFloor = state.zones.filter(z => z.floor_id === floor.floor_id);
-    zonesForFloor.forEach(zone => {
-      const z = document.createElement("div");
-      z.className = "zone";
-      z.innerHTML = `
-        ${zone.zone_name}
-        <button onclick="deleteZone('${zone.zone_id}')">Delete</button>
-      `;
-      wrapper.appendChild(z);
-    });
 
-    preview.appendChild(wrapper);
+    if (zonesForFloor.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "zone-item empty";
+      empty.textContent = "No zones";
+      floorDiv.appendChild(empty);
+    } else {
+      zonesForFloor.forEach(zone => {
+        const zoneDiv = document.createElement("div");
+        zoneDiv.className = "zone-item";
+        zoneDiv.textContent = `${zone.zone_name} (${zone.zone_type})`;
+        floorDiv.appendChild(zoneDiv);
+      });
+    }
+
+    preview.appendChild(floorDiv);
   });
-
-  // Refresh scheduler zone list if a date is already selected
-  if (calSelectedDate) {
-    renderZoneScheduleList(getBuildingId(), calSelectedDate);
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -196,9 +165,10 @@ qs("btnAddZone").addEventListener("click", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════
-   SAVE TO BACKEND
+   SAVE TO BACKEND (AUTHENTICATED)
 ═══════════════════════════════════════════════════════════ */
 
+/* Save function - add back authentication */
 qs("btnSave").addEventListener("click", async () => {
   const buildingId = getBuildingId();
 
@@ -206,40 +176,89 @@ qs("btnSave").addEventListener("click", async () => {
   state.building_name = qs("buildingName").value.trim() || buildingId;
   state.default_floor_id = qs("defaultFloor").value;
 
+  console.log("🔵 Attempting to save building:", buildingId);
+
   try {
+    const token = await getAuthToken();
+    
+    if (!token) {
+      toast("Please log in first");
+      return;
+    }
+
     const response = await fetch(`${API}/buildings/${buildingId}/config`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
       body: JSON.stringify(state)
     });
 
-    if (!response.ok) throw new Error("Save failed");
+    console.log("🔵 Response status:", response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error("🔴 Save failed:", errorData);
+      throw new Error(errorData?.detail || `HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log("🟢 Save successful:", result);
     toast("Saved to backend ✔");
+    
   } catch (err) {
-    console.error(err);
-    toast("Backend save failed");
+    console.error("🔴 Save error:", err);
+    toast(err.message || "Backend save failed");
   }
 });
 
-/* ═══════════════════════════════════════════════════════════
-   LOAD BUTTON
-═══════════════════════════════════════════════════════════ */
-
+/* Load function - add back authentication */
 qs("btnLoad").addEventListener("click", async () => {
   const buildingId = getBuildingId();
+  console.log("🔵 Attempting to load building:", buildingId);
+
   try {
-    const response = await fetch(`${API}/buildings/${buildingId}/config`);
-    if (!response.ok) throw new Error("Not found");
+    const token = await getAuthToken();
+    
+    if (!token) {
+      toast("Please log in first");
+      return;
+    }
+
+    const response = await fetch(`${API}/buildings/${buildingId}/config`, {
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+
+    console.log("🔵 Load response status:", response.status);
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Access denied: You don't own this building");
+      }
+      if (response.status === 404) {
+        throw new Error("Building not found");
+      }
+      throw new Error(`HTTP ${response.status}`);
+    }
+
     state = await response.json();
+    console.log("🟢 Loaded state:", state);
+    
     qs("buildingName").value = state.building_name || "";
     refreshFloorSelects();
     renderPreview();
     updateLinks();
     toast("Building loaded ✔");
+    
     if (calSelectedDate) renderZoneScheduleList(buildingId, calSelectedDate);
     scanMonthForInactive(buildingId);
+    
   } catch (err) {
-    toast("No config found for that Building ID");
+    console.error("🔴 Load error:", err);
+    toast(err.message || "Failed to load building");
   }
 });
 
@@ -262,7 +281,7 @@ qs("btnClear").addEventListener("click", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════
-   AUTO-LOAD FROM URL
+   AUTO-LOAD FROM URL (AUTHENTICATED)
 ═══════════════════════════════════════════════════════════ */
 
 async function autoLoadBuilding() {
@@ -273,8 +292,28 @@ async function autoLoadBuilding() {
     updateLinks();
 
     try {
-      const response = await fetch(`${API}/buildings/${buildingFromURL}/config`);
-      if (!response.ok) throw new Error("Not found");
+      const token = await getAuthToken();
+      
+      if (!token) {
+        console.warn("No auth token available");
+        renderPreview();
+        refreshFloorSelects();
+        return;
+      }
+
+      const response = await fetch(`${API}/buildings/${buildingFromURL}/config`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          toast("Access denied: You don't own this building");
+          return;
+        }
+        throw new Error("Not found");
+      }
 
       state = await response.json();
       qs("buildingName").value = state.building_name || "";
@@ -307,93 +346,70 @@ function toISO(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function todayISO() {
-  const n = new Date();
-  return toISO(n.getFullYear(), n.getMonth(), n.getDate());
-}
-
 function formatDisplayDate(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric"
-  });
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "short", year: "numeric", month: "short", day: "numeric" });
 }
 
-/* ── Fetch inactive zones for a date ── */
-async function fetchInactiveZones(buildingId, date) {
-  try {
-    const res = await fetch(`${API}/buildings/${buildingId}/zones/inactive?date=${date}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.inactive_zones || [];
-  } catch { return []; }
-}
-
-/* ── Scan month for any days with inactive zones (for red dots) ── */
+/* ── Fetch inactive zones for the current month ── */
 async function scanMonthForInactive(buildingId) {
-  inactiveDatesForMonth = new Set();
-  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstDay = toISO(calYear, calMonth, 1);
+  const lastDay = toISO(calYear, calMonth, new Date(calYear, calMonth + 1, 0).getDate());
 
-  const promises = [];
-  for (let d = 1; d <= daysInMonth; d++) {
-    const iso = toISO(calYear, calMonth, d);
-    promises.push(
-      fetch(`${API}/buildings/${buildingId}/zones/inactive?date=${iso}`)
-        .then(r => r.ok ? r.json() : { inactive_zones: [] })
-        .then(data => ({ iso, count: (data.inactive_zones || []).length }))
-        .catch(() => ({ iso, count: 0 }))
-    );
+  try {
+    const response = await fetch(`${API}/buildings/${buildingId}/zones/inactive`);
+    if (!response.ok) return;
+
+    const data = await response.json();
+    const zones = data.inactive_zones || [];
+
+    inactiveDatesForMonth.clear();
+    zones.forEach(z => {
+      if (z.date >= firstDay && z.date <= lastDay) {
+        inactiveDatesForMonth.add(z.date);
+      }
+    });
+
+    renderCalendar();
+  } catch (err) {
+    console.error("Error fetching inactive zones", err);
   }
-
-  const results = await Promise.all(promises);
-  results.forEach(({ iso, count }) => {
-    if (count > 0) inactiveDatesForMonth.add(iso);
-  });
-
-  renderCalendar();
 }
 
 /* ── Render calendar ── */
 function renderCalendar() {
-  const grid  = qs("calGrid");
-  const label = qs("calMonthLabel");
-  if (!grid || !label) return;
+  const container = qs("calendar");
+  container.innerHTML = "";
 
-  const monthNames = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December"
-  ];
-  label.textContent = `${monthNames[calMonth]} ${calYear}`;
+  const firstDay = new Date(calYear, calMonth, 1);
+  const lastDate = new Date(calYear, calMonth + 1, 0).getDate();
+  const startDay = firstDay.getDay();
 
-  grid.innerHTML = "";
+  qs("calMonthYear").textContent = firstDay.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-  const firstDay = new Date(calYear, calMonth, 1).getDay();
-  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-  const today = todayISO();
-
-  // Empty leading cells
-  for (let i = 0; i < firstDay; i++) {
-    const empty = document.createElement("div");
-    empty.className = "cal-day cal-empty";
-    grid.appendChild(empty);
+  for (let i = 0; i < startDay; i++) {
+    const blank = document.createElement("div");
+    blank.className = "cal-day blank";
+    container.appendChild(blank);
   }
 
-  for (let d = 1; d <= daysInMonth; d++) {
+  for (let d = 1; d <= lastDate; d++) {
+    const dayDiv = document.createElement("div");
+    dayDiv.className = "cal-day";
+    dayDiv.textContent = d;
+
     const iso = toISO(calYear, calMonth, d);
-    const cell = document.createElement("div");
-    cell.className = "cal-day";
-    cell.textContent = d;
 
-    if (iso < today) cell.classList.add("cal-past");
-    if (iso === today) cell.classList.add("cal-today");
-    if (iso === calSelectedDate) cell.classList.add("cal-selected");
-    if (inactiveDatesForMonth.has(iso)) cell.classList.add("cal-has-inactive");
-
-    if (iso >= today) {
-      cell.addEventListener("click", () => selectDate(iso));
+    if (inactiveDatesForMonth.has(iso)) {
+      dayDiv.classList.add("has-inactive");
     }
 
-    grid.appendChild(cell);
+    if (iso === calSelectedDate) {
+      dayDiv.classList.add("selected");
+    }
+
+    dayDiv.addEventListener("click", () => selectDate(iso));
+    container.appendChild(dayDiv);
   }
 }
 
@@ -408,96 +424,112 @@ async function selectDate(iso) {
   await renderZoneScheduleList(getBuildingId(), iso);
 }
 
-/* ── Render zone toggle list for selected date ── */
+/* ── Render zone schedule toggles ── */
 async function renderZoneScheduleList(buildingId, date) {
-  const list = qs("zoneScheduleList");
-  list.innerHTML = '<div class="sched-empty">Loading…</div>';
+  const container = qs("zoneScheduleList");
+  container.innerHTML = "";
 
   if (!state.zones || state.zones.length === 0) {
-    list.innerHTML = '<div class="sched-empty">No zones configured yet. Add zones above first.</div>';
+    container.innerHTML = '<div class="sched-empty">No zones in this building.</div>';
     return;
   }
 
-  const inactiveZones = await fetchInactiveZones(buildingId, date);
-  const inactiveIds = new Set(inactiveZones.map(z => z.zone_id));
+  try {
+    const response = await fetch(`${API}/buildings/${buildingId}/zones/inactive?date=${date}`);
+    const data = await response.json();
+    const inactiveZones = new Set((data.inactive_zones || []).map(z => z.zone_id));
 
-  // Floor name lookup
-  const floorMap = {};
-  (state.floors || []).forEach(f => { floorMap[f.floor_id] = f.floor_name; });
+    state.zones.forEach(zone => {
+      const isInactive = inactiveZones.has(zone.zone_id);
 
-  list.innerHTML = "";
+      const row = document.createElement("div");
+      row.className = "zone-sched-row";
 
-  state.zones.forEach(zone => {
-    const isInactive = inactiveIds.has(zone.zone_id);
-    const floorName = floorMap[zone.floor_id] || zone.floor_id || "—";
+      const floorName = state.floors.find(f => f.floor_id === zone.floor_id)?.floor_name || "Unknown Floor";
 
-    const row = document.createElement("div");
-    row.className = "zone-sched-row" + (isInactive ? " inactive-today" : "");
-    row.innerHTML = `
-      <div class="zone-sched-info">
-        <div class="zone-sched-name">${zone.zone_name}</div>
-        <div class="zone-sched-floor">${floorName}</div>
-      </div>
-      <div class="toggle-wrap">
-        <span class="toggle-label">${isInactive ? "Inactive" : "Active"}</span>
-        <label class="toggle">
-          <input type="checkbox" ${isInactive ? "" : "checked"}
-            data-zone-id="${zone.zone_id}" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    `;
+      row.innerHTML = `
+        <div class="zone-sched-info">
+          <div class="zone-sched-name">${zone.zone_name}</div>
+          <div class="zone-sched-floor">${floorName}</div>
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">${isInactive ? "Inactive" : "Active"}</span>
+          <label class="toggle">
+            <input type="checkbox" ${isInactive ? "checked" : ""} data-zone-id="${zone.zone_id}">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      `;
 
-    const checkbox = row.querySelector("input[type='checkbox']");
-    checkbox.addEventListener("change", async () => {
-      const isNowActive = checkbox.checked;
-      const label = row.querySelector(".toggle-label");
-      checkbox.disabled = true;
+      const checkbox = row.querySelector("input[type='checkbox']");
+      checkbox.addEventListener("change", async (e) => {
+        const shouldBeInactive = e.target.checked;
+        await toggleZoneInactive(buildingId, zone.zone_id, date, shouldBeInactive);
+      });
 
-      try {
-        const res = await fetch(`${API}/buildings/${buildingId}/zones/schedule-inactive`, {
-          method: isNowActive ? "DELETE" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ building_id: buildingId, zone_id: zone.zone_id, date })
-        });
-
-        if (!res.ok) throw new Error();
-
-        label.textContent = isNowActive ? "Active" : "Inactive";
-        row.classList.toggle("inactive-today", !isNowActive);
-        toast(`${zone.zone_name} → ${isNowActive ? "Active" : "Inactive"} on ${date}`);
-
-        // Refresh month dots
-        await scanMonthForInactive(buildingId);
-      } catch {
-        toast("Failed to update zone schedule");
-        checkbox.checked = !checkbox.checked; // revert
-      } finally {
-        checkbox.disabled = false;
-      }
+      container.appendChild(row);
     });
 
-    list.appendChild(row);
-  });
+  } catch (err) {
+    console.error("Error loading zone schedules", err);
+    container.innerHTML = '<div class="sched-empty">Failed to load zone schedules.</div>';
+  }
+}
+
+/* ── Toggle zone inactive status ── */
+async function toggleZoneInactive(buildingId, zoneId, date, inactive) {
+  try {
+    if (inactive) {
+      const response = await fetch(`${API}/buildings/${buildingId}/zones/schedule-inactive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ building_id: buildingId, zone_id: zoneId, date })
+      });
+
+      if (!response.ok) throw new Error("Failed to schedule inactive");
+      toast("Zone marked inactive ✔");
+
+    } else {
+      const response = await fetch(
+        `${API}/buildings/${buildingId}/zones/schedule-inactive?zone_id=${zoneId}&date=${date}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) throw new Error("Failed to remove inactive schedule");
+      toast("Zone marked active ✔");
+    }
+
+    scanMonthForInactive(buildingId);
+
+  } catch (err) {
+    console.error(err);
+    toast("Failed to update zone status");
+  }
 }
 
 /* ── Calendar navigation ── */
 qs("calPrev").addEventListener("click", () => {
   calMonth--;
-  if (calMonth < 0) { calMonth = 11; calYear--; }
+  if (calMonth < 0) {
+    calMonth = 11;
+    calYear--;
+  }
   renderCalendar();
-  scanMonthForInactive(getBuildingId());
+  const bid = getBuildingId();
+  if (bid) scanMonthForInactive(bid);
 });
 
 qs("calNext").addEventListener("click", () => {
   calMonth++;
-  if (calMonth > 11) { calMonth = 0; calYear++; }
+  if (calMonth > 11) {
+    calMonth = 0;
+    calYear++;
+  }
   renderCalendar();
-  scanMonthForInactive(getBuildingId());
+  const bid = getBuildingId();
+  if (bid) scanMonthForInactive(bid);
 });
 
-/* ═══════════════════════════════════════════════════════════
-   BOOT
-═══════════════════════════════════════════════════════════ */
-
+/* ── Init ── */
+qs("buildingId").addEventListener("input", updateLinks);
 autoLoadBuilding();
