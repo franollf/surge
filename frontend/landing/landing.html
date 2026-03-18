@@ -82,13 +82,9 @@
               </div>
 
               <div class="field">
-                <label>Type</label>
+                <label>Airport Zone Type</label>
                 <select id="zoneType">
-                  <option value="movement">Movement</option>
-                  <option value="queue">Queue</option>
-                  <option value="amenity">Amenity</option>
-                  <option value="gate">Gate</option>
-                  <option value="custom">Custom</option>
+                  <!-- Options injected by populateZoneTypeSelect() in landing.js -->
                 </select>
               </div>
 
@@ -160,6 +156,26 @@
                 Select a date to manage zone availability.
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+      <div class="section-label">Incentive Modules</div>
+      <div class="card">
+        <div class="head">
+          <h2>Passenger Incentives</h2>
+          <span
+            style="
+              font-size: 11px;
+              color: #475569;
+              font-family: &quot;DM Mono&quot;, monospace;
+            "
+          >
+            Saved with building config
+          </span>
+        </div>
+        <div class="body">
+          <div id="incentive-toggles">
+            <!-- Populated by renderIncentiveToggles() in landing.js -->
           </div>
         </div>
       </div>
