@@ -5,21 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="SURGE Passenger Guidance System - Real-time congestion monitoring and navigation assistance"
+      content="SURGE Passenger Guidance — Real-time airport terminal information"
     />
-    <title>SURGE Passenger Interface</title>
+    <title>SURGE — Airport Passenger</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="container">
-      <header>
-        <h1>SURGE PASSENGER</h1>
-      </header>
+    <header>
+      <div class="header-left">
+        <div class="logo-mark">
+          <svg viewBox="0 0 18 18" fill="none" stroke-linecap="round">
+            <polyline
+              points="3,14 7,6 11,10 15,3"
+              stroke="currentColor"
+              stroke-width="2.2"
+            />
+          </svg>
+        </div>
+        <h1>SURGE</h1>
+      </div>
+      <div class="status-pill online" id="connection-pill">
+        <span class="pulse-dot"></span>
+        <span id="connection-label">Live</span>
+      </div>
+    </header>
 
+    <div class="container">
       <main>
-        <!-- QR Code Section -->
+        <!-- QR Code -->
         <section id="qr-code-section" class="card" aria-labelledby="qr-heading">
-          <h2 id="qr-heading">Your SURGE ID</h2>
+          <h2 id="qr-heading">Your Terminal Pass</h2>
           <div id="qr-code-display" class="qr-container">
             <img
               id="qr-code-image"
@@ -27,44 +48,282 @@
               alt="Your unique SURGE QR code for checkpoint scanning"
             />
           </div>
-          <p id="surge-id-text" class="surge-id" aria-live="polite">
-            Loading...
-          </p>
-          <p class="instructions">Scan this code at designated checkpoints</p>
-        </section>
-
-        <!-- Current Zone Info -->
-        <section id="zone-info" class="card" aria-labelledby="zone-heading">
-          <h2 id="zone-heading">Current Zone</h2>
-          <p id="zone-name" aria-live="polite">Loading...</p>
-          <p id="zone-status" class="status" role="status" aria-live="polite">
-            Checking congestion...
+          <p id="surge-id-text" class="surge-id" aria-live="polite">Loading…</p>
+          <p class="instructions">
+            Scan at each checkpoint as you move through the terminal
           </p>
         </section>
 
-        <!-- Guidance -->
-        <section id="guidance" class="card" aria-labelledby="guidance-heading">
-          <h2 id="guidance-heading">Guidance</h2>
-          <p id="guidance-text" aria-live="polite">
-            Please wait while we fetch guidance...
-          </p>
+        <!-- Terminal Status header -->
+        <section class="card airport-header-card">
+          <h2>Terminal Status</h2>
+          <p class="airport-sub">Live wait times across the terminal</p>
         </section>
 
-        <!-- Wait Time -->
-        <section id="wait-time" class="card" aria-labelledby="wait-heading">
-          <h2 id="wait-heading">Estimated Wait Time</h2>
-          <p id="wait-time-text" aria-live="polite">Calculating...</p>
-        </section>
+        <!-- Metric cards -->
+        <div class="metrics-grid">
+          <!-- Security Wait -->
+          <div class="card metric-card" id="card-security">
+            <div class="metric-icon security-icon">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M12 2l7 4v5c0 5-3.5 9.3-7 11C8.5 20.3 5 16 5 11V6l7-4z"
+                />
+              </svg>
+            </div>
+            <p class="metric-label">Security Wait</p>
+            <p class="metric-value" id="security-val" aria-live="polite">—</p>
+            <p class="metric-unit">min</p>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="security-bar"></div>
+            </div>
+          </div>
 
-        <!-- Alternative Suggestions -->
+          <!-- Customs Wait -->
+          <div class="card metric-card" id="card-customs">
+            <div class="metric-icon customs-icon">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="7" width="20" height="14" rx="2" />
+                <path d="M16 7V5a4 4 0 00-8 0v2" />
+                <circle cx="12" cy="14" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <p class="metric-label">Customs Wait</p>
+            <p class="metric-value" id="customs-val" aria-live="polite">—</p>
+            <p class="metric-unit">min</p>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="customs-bar"></div>
+            </div>
+          </div>
+
+          <!-- Gates breakdown card -->
+          <div class="card gates-card" id="card-gates">
+            <div class="gates-card-header">
+              <div class="metric-icon gate-cong-icon">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M21 16v-2a4 4 0 00-4-4H5" />
+                  <polyline points="1,12 5,8 5,16" />
+                  <line x1="5" y1="12" x2="21" y2="12" />
+                </svg>
+              </div>
+              <p class="metric-label">Gates</p>
+            </div>
+            <div class="gates-list" id="gates-list" aria-live="polite">
+              <p class="gates-empty">No gate data</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Route Recommendation -->
         <section
-          id="alternatives"
-          class="card"
-          aria-labelledby="alternatives-heading"
+          class="card route-card"
+          id="route-card"
+          style="display: none"
+          aria-labelledby="route-heading"
         >
-          <h2 id="alternatives-heading">Low-Congestion Areas</h2>
-          <ul id="alternatives-list" aria-live="polite"></ul>
+          <h2 id="route-heading">Recommended Route</h2>
+          <div class="route-zone-tabs" id="route-tabs">
+            <button class="route-tab active" data-type="security">
+              Security
+            </button>
+            <button class="route-tab" data-type="customs">Customs</button>
+            <button class="route-tab" data-type="gate">Gates</button>
+          </div>
+          <div class="route-options" id="route-options">
+            <p class="route-empty">Loading…</p>
+          </div>
+          <div
+            class="route-recommendation"
+            id="route-recommendation"
+            style="display: none"
+          >
+            <span class="route-rec-label">Recommended</span>
+            <span class="route-rec-name" id="route-rec-name">—</span>
+            <span class="route-rec-wait" id="route-rec-wait">—</span>
+          </div>
         </section>
+
+        <!-- Virtual Queue -->
+        <section
+          class="card queue-card"
+          id="queue-card"
+          style="display: none"
+          aria-labelledby="queue-heading"
+        >
+          <h2 id="queue-heading">Virtual Queue</h2>
+          <div class="queue-zone-select" id="queue-zone-select">
+            <!-- Zone buttons injected by JS -->
+          </div>
+          <!-- In-queue state -->
+          <div class="queue-active" id="queue-active" style="display: none">
+            <div class="queue-stats">
+              <div class="queue-stat">
+                <p class="queue-stat-label">Queue Position</p>
+                <p class="queue-stat-value" id="queue-position">—</p>
+              </div>
+              <div class="queue-stat-divider"></div>
+              <div class="queue-stat">
+                <p class="queue-stat-label">Estimated Wait</p>
+                <p class="queue-stat-value" id="queue-wait">—</p>
+                <p class="queue-stat-unit">min</p>
+              </div>
+              <div class="queue-stat-divider"></div>
+              <div class="queue-stat">
+                <p class="queue-stat-label">In Queue</p>
+                <p class="queue-stat-value" id="queue-size">—</p>
+              </div>
+            </div>
+            <button class="queue-leave-btn" id="queue-leave-btn">
+              Leave Queue
+            </button>
+          </div>
+          <!-- Not in queue state -->
+          <div class="queue-join" id="queue-join">
+            <p class="queue-join-sub" id="queue-join-sub">
+              Join the digital queue to hold your place
+            </p>
+            <button class="queue-join-btn" id="queue-join-btn">
+              Join Queue
+            </button>
+          </div>
+        </section>
+
+        <!-- Incentives -->
+        <section
+          class="card incentives-card"
+          id="incentives-card"
+          style="display: none"
+          aria-labelledby="incentives-heading"
+        >
+          <h2 id="incentives-heading">Available at This Terminal</h2>
+          <div class="incentives-list" id="incentives-list"></div>
+        </section>
+
+        <!-- Pre-scan hint -->
+        <div class="card prescan-hint" id="prescan-hint">
+          <div class="prescan-row">
+            <div class="prescan-icon">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="3" height="3" />
+                <rect x="18" y="18" width="3" height="3" />
+              </svg>
+            </div>
+            <div>
+              <p class="prescan-title">Scan to personalise</p>
+              <p class="prescan-sub">
+                Scan your QR code at a checkpoint to track your journey through
+                the terminal
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Post-scan: current location -->
+        <section
+          id="location-card"
+          class="card"
+          style="display: none"
+          aria-labelledby="zone-heading"
+        >
+          <h2 id="zone-heading">Your Location</h2>
+          <div class="location-row">
+            <p id="zone-name" aria-live="polite">—</p>
+            <p id="zone-status" class="status" role="status" aria-live="polite">
+              —
+            </p>
+          </div>
+        </section>
+
+        <!-- Post-scan: guidance + alternatives + timeline -->
+        <div id="journey-details" style="display: none">
+          <section
+            id="guidance"
+            class="card"
+            aria-labelledby="guidance-heading"
+          >
+            <h2 id="guidance-heading">Guidance</h2>
+            <p id="guidance-text" aria-live="polite">—</p>
+          </section>
+
+          <section id="wait-time" class="card" aria-labelledby="wait-heading">
+            <h2 id="wait-heading">Current Zone Wait</h2>
+            <p id="wait-time-text" aria-live="polite">—</p>
+          </section>
+
+          <section
+            id="alternatives"
+            class="card"
+            aria-labelledby="alternatives-heading"
+          >
+            <h2 id="alternatives-heading">Low-Congestion Areas</h2>
+            <ul id="alternatives-list" aria-live="polite"></ul>
+          </section>
+
+          <section class="card" aria-labelledby="timeline-heading">
+            <h2 id="timeline-heading">Your Journey</h2>
+            <div class="timeline">
+              <div class="timeline-step" id="tl-security">
+                <div class="tl-dot"></div>
+                <div class="tl-content">
+                  <p class="tl-name">Security</p>
+                  <p class="tl-time" id="tl-security-time">—</p>
+                </div>
+              </div>
+              <div class="timeline-connector"></div>
+              <div class="timeline-step" id="tl-customs">
+                <div class="tl-dot"></div>
+                <div class="tl-content">
+                  <p class="tl-name">Customs</p>
+                  <p class="tl-time" id="tl-customs-time">—</p>
+                </div>
+              </div>
+              <div class="timeline-connector"></div>
+              <div class="timeline-step" id="tl-gate">
+                <div class="tl-dot"></div>
+                <div class="tl-content">
+                  <p class="tl-name">Gate</p>
+                  <p class="tl-time" id="tl-gate-time">—</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="page-footer">
+          <span>Updates every 20s</span>
+          <span class="footer-dot">·</span>
+          <span id="last-updated">—</span>
+        </footer>
       </main>
     </div>
 

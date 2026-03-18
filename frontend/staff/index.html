@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    />
+    <title>SURGE — Staff Scanner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="staff.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../shared/config.js"></script>
+    <script src="../shared/auth.js"></script>
+  </head>
+  <body>
+    <header>
+      <div class="header-left">
+        <div class="logo-mark">
+          <svg viewBox="0 0 18 18" fill="none" stroke-linecap="round">
+            <polyline
+              points="3,14 7,6 11,10 15,3"
+              stroke="currentColor"
+              stroke-width="2.2"
+            />
+          </svg>
+        </div>
+        <div>
+          <h1>SURGE Staff</h1>
+          <p class="header-sub">Zone Scanner</p>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <button
+          class="signout-btn"
+          onclick="window.location.href = '../admin/dashboard.html'"
+        >
+          ← Dashboard
+        </button>
+        <button class="signout-btn" onclick="signOut()">Sign Out</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- Building selector -->
+      <section class="card">
+        <h2>Airport Location</h2>
+        <select id="building-select">
+          <option value="" disabled selected>Loading buildings…</option>
+        </select>
+      </section>
+
+      <!-- Zone selector -->
+      <section class="card">
+        <h2>Select Zone</h2>
+        <div class="zone-grid" id="zone-grid">
+          <p class="empty-hint">Select a building above</p>
+        </div>
+      </section>
+
+      <!-- Headcount input + submit -->
+      <section class="card scan-card">
+        <h2>Report Headcount</h2>
+
+        <div
+          class="selected-zone-banner"
+          id="selected-zone-banner"
+          style="display: none"
+        >
+          <span class="selected-zone-dot" id="selected-zone-dot"></span>
+          <div>
+            <p class="selected-zone-name" id="selected-zone-name">—</p>
+            <p class="selected-zone-level" id="selected-zone-level">—</p>
+          </div>
+        </div>
+        <p class="no-zone-hint" id="no-zone-hint">
+          Select a zone above to report headcount
+        </p>
+
+        <div
+          class="headcount-input-wrap"
+          id="headcount-wrap"
+          style="display: none"
+        >
+          <label for="headcount-input">Passengers visible in zone</label>
+          <div class="headcount-row">
+            <button class="hc-btn" id="hc-minus">−</button>
+            <input
+              type="number"
+              id="headcount-input"
+              value="0"
+              min="0"
+              max="5000"
+              inputmode="numeric"
+            />
+            <button class="hc-btn" id="hc-plus">+</button>
+          </div>
+          <p class="headcount-hint">
+            Enter the number of passengers you can observe in this zone
+          </p>
+        </div>
+
+        <button class="submit-btn" id="submit-btn" disabled>
+          <span id="submit-label">Submit Scan</span>
+          <div
+            class="submit-spinner"
+            id="submit-spinner"
+            style="display: none"
+          ></div>
+        </button>
+      </section>
+
+      <!-- Result feedback -->
+      <section class="card result-card" id="result-card" style="display: none">
+        <h2>Scan Recorded</h2>
+        <div class="result-body" id="result-body"></div>
+      </section>
+
+      <!-- Live zone stats after scan -->
+      <section class="card" id="stats-card" style="display: none">
+        <h2>Current Zone Status</h2>
+        <div class="stats-grid" id="stats-grid"></div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="staff.js"></script>
+  </body>
+</html>

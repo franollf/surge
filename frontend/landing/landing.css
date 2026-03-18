@@ -718,3 +718,52 @@ button.danger:hover {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   INCENTIVE MODULES
+═══════════════════════════════════════════════════════════ */
+.incentive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  transition: opacity 0.2s;
+}
+
+.incentive-row:last-child { border-bottom: none; }
+
+.incentive-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.incentive-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.incentive-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.incentive-desc {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+}
+
+.incentive-desc em {
+  color: rgba(248, 113, 113, 0.7);
+  font-style: normal;
+}
