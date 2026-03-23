@@ -1,3 +1,4 @@
 backend/.env
 backend/__pycache__/
 frontend/shared/config.js
+backend/tempCodeRunnerFile.py
