@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SURGE – Operations Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="admin.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../shared/config.js"></script>
@@ -11,23 +17,19 @@
   </head>
 
   <body>
-    <!-- ─────────────────────────────────────────────
-         TOP BAR
-    ───────────────────────────────────────────── -->
+    <!-- ── TOP BAR ── -->
     <div id="topbar">
       <div class="topbar-left">
         <span id="live-clock">──:──:──</span>
         <span class="topbar-divider">|</span>
         <span id="live-date">───, ── ───────── ────</span>
       </div>
-
       <div class="topbar-center">
         <span class="status-pill online">
           <span class="pulse-dot"></span>
           All Systems Operational
         </span>
       </div>
-
       <div class="topbar-right">
         <span class="topbar-label">Refreshes in</span>
         <span id="refresh-countdown">30s</span>
@@ -39,59 +41,77 @@
       </div>
     </div>
 
-    <!-- ─────────────────────────────────────────────
-         HEADER
-    ───────────────────────────────────────────── -->
+    <!-- ── HEADER ── -->
     <header>
       <h1>SURGE Operations Dashboard</h1>
       <p>Live Zone Heatmap — auto-refresh every 30 s</p>
-
-      <!-- Building Selector -->
       <div class="building-selector">
         <label for="building-select"><strong>Building:</strong></label>
         <select id="building-select"></select>
-
         <button id="manage-building-btn" class="icon-btn">
           ⚙ Manage Building
+        </button>
+        <button
+          class="icon-btn"
+          onclick="window.location.href = '../staff/index.html'"
+        >
+          👷 Staff Scanner
         </button>
       </div>
     </header>
 
-    <!-- ─────────────────────────────────────────────
-         KPI STRIP
-    ───────────────────────────────────────────── -->
+    <!-- ── KPI STRIP ── -->
     <section id="kpi-strip">
       <div class="kpi-card">
         <span class="kpi-label">Active Zones</span>
         <span class="kpi-value" id="kpi-zones">0</span>
       </div>
-
       <div class="kpi-card">
         <span class="kpi-label">Total Users Online</span>
         <span class="kpi-value" id="kpi-users">0</span>
       </div>
-
       <div class="kpi-card">
         <span class="kpi-label">Avg Response Time</span>
         <span class="kpi-value" id="kpi-rt">---</span>
       </div>
-
       <div class="kpi-card">
         <span class="kpi-label">High Traffic</span>
         <span class="kpi-value" id="kpi-incidents">0</span>
       </div>
     </section>
 
-    <!-- ─────────────────────────────────────────────
-         FILTER BAR
-    ───────────────────────────────────────────── -->
+    <!-- ── ALERT SYSTEM ── -->
+    <div id="alert-strip" style="display: none">
+      <div class="alert-strip-header">
+        <span class="alert-strip-title">
+          <span class="alert-icon">⚠</span>
+          Active Alerts
+        </span>
+        <span class="alert-strip-count" id="alert-count">0 alerts</span>
+      </div>
+      <div class="alert-list" id="alert-list"></div>
+    </div>
+
+    <!-- ── DENSITY STRIP ── -->
+    <div id="density-strip">
+      <div class="density-header">
+        <span class="density-title">Passenger Density Estimate</span>
+        <span class="density-meta" id="density-meta"
+          >40% participation assumed</span
+        >
+      </div>
+      <div class="density-zones" id="density-zones">
+        <div class="density-empty">No scan activity detected yet</div>
+      </div>
+    </div>
+
+    <!-- ── FILTER BAR ── -->
     <div id="controls-bar">
       <div class="controls-left">
         <label for="filter-floor">Floor</label>
         <select id="filter-floor">
           <option value="all">All Floors</option>
         </select>
-
         <label for="filter-status">Status</label>
         <select id="filter-status">
           <option value="all">All</option>
@@ -99,11 +119,9 @@
           <option value="medium">Medium</option>
           <option value="high">High</option>
         </select>
-
         <label for="search-zones">Search</label>
         <input id="search-zones" type="text" placeholder="Zone name…" />
       </div>
-
       <div class="controls-right">
         <span class="topbar-label">Sort by</span>
         <select id="sort-zones">
@@ -114,37 +132,18 @@
       </div>
     </div>
 
-    <!-- ─────────────────────────────────────────────
-         ZONES GRID
-    ───────────────────────────────────────────── -->
+    <!-- ── ZONES GRID ── -->
     <section id="zones-container"></section>
 
-    <!-- ─────────────────────────────────────────────
-         FOOTER
-    ───────────────────────────────────────────── -->
+    <!-- ── FOOTER ── -->
     <footer id="dashboard-footer">
-      <span>
-        Last updated:
-        <span id="last-updated">──:──:──</span>
-      </span>
-
+      <span>Last updated: <span id="last-updated">──:──:──</span></span>
       <span class="footer-divider">·</span>
-
-      <span>
-        Operator:
-        <strong>admin@surge.io</strong>
-      </span>
-
+      <span>Operator: <strong>admin@surge.io</strong></span>
       <span class="footer-divider">·</span>
-
       <span>v2.4.1</span>
-
       <span class="footer-divider">·</span>
-
-      <span>
-        Session:
-        <span id="session-timer">00:00</span>
-      </span>
+      <span>Session: <span id="session-timer">00:00</span></span>
     </footer>
 
     <div id="toast-container" aria-live="polite"></div>

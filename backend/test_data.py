@@ -200,7 +200,7 @@ if __name__ == "__main__":
 
     # Example: create 200 people in airport-yvr at the cafeteria zone
     create_congestion_at_zone(
-        "cafeteria", num_passengers=200, building_id="airport-yvr")
+        "gate a", num_passengers=100, building_id="airport-x")
 
     print("\n" + "=" * 60)
     print("✅ Test data generation complete!")
