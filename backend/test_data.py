@@ -36,11 +36,6 @@ def load_building_config(building_id: str) -> dict:
 def resolve_zone_id(config: dict, zone: str) -> str:
     """
     Accepts either a zone_id or a human zone_name and returns the zone_id.
-
-    Matching rules:
-    - exact match on zone_id
-    - case-insensitive match on zone_name
-    - case-insensitive match on zone_id (helpful for simple ids)
     """
     zones = config.get("zones") or []
     if not zones:
@@ -198,8 +193,9 @@ if __name__ == "__main__":
     print("SURGE Test Data Generator")
     print("=" * 60)
 
-    # Example: create 200 people in airport-yvr at the cafeteria zone
+    # E.g. create 200 people in airport-yvr at the cafeteria zone
     create_congestion_at_zone(
+        # CHANGE THESE VALUES FOR TESTING PURPOSES
         "gate a", num_passengers=100, building_id="airport-x")
 
     print("\n" + "=" * 60)
