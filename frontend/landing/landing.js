@@ -269,9 +269,6 @@ qs("btnSave").addEventListener("click", async () => {
   const invalid = state.zones.filter(z => !VALID_ZONE_TYPES.has(z.zone_type));
   if (invalid.length) return toast(`Invalid zone types: ${invalid.map(z => z.zone_name).join(", ")}`);
 
-  console.log("🔵 Saving building:", buildingId);
-  console.log("🔵 Incentives:", state.incentives);
-
   try {
     const token = await getAuthToken();
     if (!token) return toast("Please log in first");
@@ -282,16 +279,12 @@ qs("btnSave").addEventListener("click", async () => {
       body: JSON.stringify(state)
     });
 
-    console.log("🔵 Response status:", response.status);
-
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      console.error("🔴 Save failed:", errorData);
       const msg = errorData?.detail?.message || errorData?.detail || `HTTP ${response.status}`;
       throw new Error(msg);
     }
 
-    console.log("🟢 Save successful:", await response.json());
     toast("Saved ✔");
 
   } catch (err) {
@@ -306,7 +299,6 @@ qs("btnSave").addEventListener("click", async () => {
 
 qs("btnLoad").addEventListener("click", async () => {
   const buildingId = getBuildingId();
-  console.log("🔵 Loading building:", buildingId);
 
   try {
     const token = await getAuthToken();
@@ -315,8 +307,6 @@ qs("btnLoad").addEventListener("click", async () => {
     const response = await fetch(`${API}/buildings/${buildingId}/config`, {
       headers: { "Authorization": `Bearer ${token}` }
     });
-
-    console.log("🔵 Load response status:", response.status);
 
     if (!response.ok) {
       if (response.status === 403) throw new Error("Access denied: You don't own this building");
@@ -329,7 +319,6 @@ qs("btnLoad").addEventListener("click", async () => {
     const valid   = all.filter(z => VALID_ZONE_TYPES.has(z.zone_type));
     const skipped = all.length - valid.length;
 
-    // FIX: merge incentives from loaded config, fallback to defaults
     state = {
       ...loaded,
       zones:      valid,
@@ -340,7 +329,7 @@ qs("btnLoad").addEventListener("click", async () => {
 
     refreshFloorSelects();
     renderPreview();
-    renderIncentiveToggles();  // ← FIX: was missing, toggles never updated on load
+    renderIncentiveToggles();
     updateLinks();
 
     toast(skipped > 0 ? `Loaded ✔ (${skipped} old zone type(s) removed)` : "Loaded ✔");
@@ -365,12 +354,12 @@ qs("btnClear").addEventListener("click", () => {
     default_floor_id: "",
     floors:           [],
     zones:            [],
-    incentives:       { ...DEFAULT_INCENTIVES },  // FIX: was missing incentives
+    incentives:       { ...DEFAULT_INCENTIVES },
   };
   qs("buildingName").value = "";
   refreshFloorSelects();
   renderPreview();
-  renderIncentiveToggles();  // FIX: reset toggles visually
+  renderIncentiveToggles();
   toast("Cleared");
 });
 
@@ -403,7 +392,6 @@ async function autoLoadBuilding() {
       const valid   = all.filter(z => VALID_ZONE_TYPES.has(z.zone_type));
       const skipped = all.length - valid.length;
 
-      // FIX: merge incentives properly
       state = {
         ...loaded,
         zones:      valid,
@@ -421,7 +409,7 @@ async function autoLoadBuilding() {
   }
 
   renderPreview();
-  renderIncentiveToggles();  // FIX: always render after load attempt
+  renderIncentiveToggles();
   refreshFloorSelects();
   renderCalendar();
 
@@ -453,7 +441,10 @@ async function scanMonthForInactive(buildingId) {
   const lastDay  = toISO(calYear, calMonth, new Date(calYear, calMonth+1, 0).getDate());
 
   try {
-    const response = await fetch(`${API}/buildings/${buildingId}/zones/inactive`);
+    const token    = await getAuthToken();
+    const response = await fetch(`${API}/buildings/${buildingId}/zones/inactive`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
     if (!response.ok) return;
 
     const data = await response.json();
@@ -515,14 +506,21 @@ async function renderZoneScheduleList(buildingId, date) {
   }
 
   try {
-    const response    = await fetch(`${API}/buildings/${buildingId}/zones/inactive?date=${date}`);
+    const token    = await getAuthToken();
+    const response = await fetch(`${API}/buildings/${buildingId}/zones/inactive?date=${date}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
     const data        = await response.json();
     const inactiveSet = new Set((data.inactive_zones || []).map(z => z.zone_id));
 
     state.zones.forEach(zone => {
       const isInactive = inactiveSet.has(zone.zone_id);
-      const row        = document.createElement("div");
-      row.className    = "zone-sched-row";
+
+      // FIX: checked = ACTIVE (green), unchecked = INACTIVE (red)
+      const isChecked = !isInactive;
+
+      const row = document.createElement("div");
+      row.className = `zone-sched-row${isInactive ? " inactive-today" : ""}`;
 
       const floorName = state.floors.find(f => f.floor_id === zone.floor_id)?.floor_name || "";
 
@@ -534,14 +532,19 @@ async function renderZoneScheduleList(buildingId, date) {
         <div class="toggle-wrap">
           <span class="toggle-label">${isInactive ? "Inactive" : "Active"}</span>
           <label class="toggle">
-            <input type="checkbox" ${isInactive ? "checked" : ""} data-zone-id="${zone.zone_id}">
+            <input type="checkbox" ${isChecked ? "checked" : ""} data-zone-id="${zone.zone_id}">
             <span class="toggle-slider"></span>
           </label>
         </div>
       `;
 
       row.querySelector("input[type='checkbox']").addEventListener("change", async (e) => {
-        await toggleZoneInactive(buildingId, zone.zone_id, date, e.target.checked);
+        const nowActive = e.target.checked; // true = green = active, false = red = inactive
+        const labelEl   = row.querySelector(".toggle-label");
+        labelEl.textContent = nowActive ? "Active" : "Inactive";
+        row.classList.toggle("inactive-today", !nowActive);
+        // When nowActive=false the zone is being marked inactive → pass inactive=true
+        await toggleZoneInactive(buildingId, zone.zone_id, date, !nowActive);
       });
 
       container.appendChild(row);
@@ -555,23 +558,35 @@ async function renderZoneScheduleList(buildingId, date) {
 
 async function toggleZoneInactive(buildingId, zoneId, date, inactive) {
   try {
+    const token = await getAuthToken();
+
     if (inactive) {
+      // Zone is being set INACTIVE → POST to schedule it
       const r = await fetch(`${API}/buildings/${buildingId}/zones/schedule-inactive`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ building_id: buildingId, zone_id: zoneId, date })
       });
       if (!r.ok) throw new Error("Failed to schedule inactive");
       toast("Zone marked inactive ✔");
     } else {
+      // Zone is being set ACTIVE → DELETE the inactive schedule
       const r = await fetch(
         `${API}/buildings/${buildingId}/zones/schedule-inactive?zone_id=${zoneId}&date=${date}`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        }
       );
       if (!r.ok) throw new Error("Failed to remove inactive schedule");
       toast("Zone marked active ✔");
     }
+
     scanMonthForInactive(buildingId);
+
   } catch (err) {
     console.error(err);
     toast("Failed to update zone status");

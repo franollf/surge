@@ -38,14 +38,7 @@ def get_zone_label(zone_type: str) -> str:
 
 def validate_building_zones(zones: list) -> list[str]:
     """
-    Validates a list of zone dicts from a building config.
-    Returns a list of error strings (empty = all valid).
-
-    Each zone dict must have:
-      zone_id   (str)
-      zone_name (str)
-      zone_type (str) — must be one of VALID_ZONE_TYPES
-      floor_id  (str)
+    Returns a list of error strings (empty = all valid)
     """
     errors = []
     for i, zone in enumerate(zones):

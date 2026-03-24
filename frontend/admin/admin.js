@@ -6,6 +6,7 @@
 let currentBuilding = null;
 let buildingConfig  = null;
 let allZones        = {};
+let inactiveZoneIds = new Set();
 let countdownSecs   = 30;
 let sessionSecs     = 0;
 
@@ -153,6 +154,30 @@ function populateFloorDropdown() {
 }
 
 /* ─────────────────────────────────────────────
+   FETCH TODAY'S INACTIVE ZONES
+───────────────────────────────────────────── */
+async function fetchInactiveZones(buildingId) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  try {
+    const token = await getAuthToken();
+    const res   = await fetch(
+      `http://localhost:8000/buildings/${buildingId}/zones/inactive?date=${today}`,
+      { headers: { "Authorization": `Bearer ${token}` } }
+    );
+    console.log("🔵 Inactive zones response status:", res.status);
+    if (!res.ok) return;
+    const data = await res.json();
+    console.log("🔵 Inactive zones data:", data);
+    inactiveZoneIds = new Set((data.inactive_zones || []).map(z => z.zone_id));
+    console.log("🔵 inactiveZoneIds set:", [...inactiveZoneIds]);
+  } catch (err) {
+    console.error("Failed to fetch inactive zones", err);
+    inactiveZoneIds = new Set();
+  }
+}
+
+/* ─────────────────────────────────────────────
    FETCH CONGESTION + DENSITY
 ───────────────────────────────────────────── */
 async function fetchZones() {
@@ -161,6 +186,7 @@ async function fetchZones() {
 
   try {
     await loadBuildingConfig(currentBuilding);
+    await fetchInactiveZones(currentBuilding);
 
     const t0  = performance.now();
     const res = await fetch(`http://localhost:8000/congestion/${currentBuilding}`);
@@ -176,6 +202,9 @@ async function fetchZones() {
     const backendZones = data.zones || {};
     const merged = {};
     Object.keys(backendZones).forEach(zoneId => {
+      // Skip zones marked inactive for today
+      if (inactiveZoneIds.has(zoneId)) return;
+
       const meta      = buildingConfig?.zones?.find(z => z.zone_id === zoneId);
       merged[zoneId]  = {
         ...backendZones[zoneId],
@@ -190,10 +219,8 @@ async function fetchZones() {
     updateKPIs(allZones);
     updateAlerts(allZones);
 
-    // ── Density estimation — called here so it updates every refresh ──
     await fetchDensity(currentBuilding);
 
-    // Update last-updated timestamp
     const luEl = document.getElementById("last-updated");
     if (luEl) luEl.textContent = new Date().toLocaleTimeString();
 
@@ -305,7 +332,8 @@ function renderDensityStrip(data) {
   }
 
   const zones  = data.zones || [];
-  const active = zones.filter(z => z.scans_detected > 0);
+  // Also hide inactive zones from the density strip
+  const active = zones.filter(z => z.scans_detected > 0 && !inactiveZoneIds.has(z.zone_id));
 
   if (!active.length) {
     strip.innerHTML = `<div class="density-empty">No scan activity detected yet</div>`;
@@ -322,7 +350,6 @@ function renderDensityStrip(data) {
         ? "var(--warning)"
         : "var(--teal)";
 
-    // Confidence dots — same color as congestion level, filled dots = confidence
     const confDots = z.confidence === "high"
       ? "●●●"
       : z.confidence === "medium"
@@ -351,11 +378,8 @@ function renderDensityStrip(data) {
   }).join("");
 }
 
-
 /* ─────────────────────────────────────────────
    ALERT SYSTEM
-   Fires for any zone at HIGH congestion.
-   Clears automatically when zone drops below HIGH.
 ───────────────────────────────────────────── */
 function updateAlerts(zones) {
   const strip     = document.getElementById("alert-strip");
@@ -363,7 +387,6 @@ function updateAlerts(zones) {
   const countEl   = document.getElementById("alert-count");
   if (!strip || !list) return;
 
-  // Find all HIGH zones
   const highZones = Object.entries(zones).filter(
     ([_, z]) => z.congestion_level === "HIGH"
   );

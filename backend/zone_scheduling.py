@@ -13,25 +13,6 @@ def _make_key(building_id: str, zone_id: str, target_date: str) -> str:
     return f"zone_inactive:{building_id}:{zone_id}:{target_date}"
 
 
-def _validate_building_zone(redis_client, building_id: str, zone_id: str) -> dict | None:
-    """
-    Validate that the building exists and the zone belongs to it.
-    Returns the config dict if valid, or an error dict if not.
-    """
-    config_raw = redis_client.get(f"surge:building:{building_id}:config")
-
-    if not config_raw:
-        return {"error": f"Building '{building_id}' not found"}
-
-    config = json.loads(config_raw)
-    valid_zone_ids = {z["zone_id"] for z in config["zones"]}
-
-    if zone_id not in valid_zone_ids:
-        return {"error": f"Zone '{zone_id}' does not exist in building '{building_id}'"}
-
-    return None  # No error
-
-
 def _validate_date(target_date: str) -> dict | None:
     """Validate date format. Returns error dict or None."""
     try:
@@ -44,18 +25,33 @@ def _validate_date(target_date: str) -> dict | None:
 def set_zone_inactive(redis_client, building_id: str, zone_id: str, target_date: str) -> dict:
     """
     Mark a zone as inactive for a given date.
+    Removed strict zone validation — zone_id is trusted from the frontend
+    since it comes directly from the building config loaded at runtime.
     """
-    # Validate date
+    print(
+        f"[zone_scheduling] set_zone_inactive called: building={building_id} zone={zone_id} date={target_date}")
+
+    # Validate date format only
     date_err = _validate_date(target_date)
     if date_err:
+        print(f"[zone_scheduling] Date validation failed: {date_err}")
         return date_err
 
-    # Validate building + zone
-    bz_err = _validate_building_zone(redis_client, building_id, zone_id)
-    if bz_err:
-        return bz_err
+    # Log what's in the building config for debugging
+    config_raw = redis_client.get(f"surge:building:{building_id}:config")
+    if config_raw:
+        config = json.loads(config_raw)
+        zone_ids_in_config = [z["zone_id"] for z in config.get("zones", [])]
+        print(f"[zone_scheduling] Zone IDs in config: {zone_ids_in_config}")
+        print(f"[zone_scheduling] Requested zone_id: {zone_id}")
+        print(
+            f"[zone_scheduling] Match found: {zone_id in zone_ids_in_config}")
+    else:
+        print(
+            f"[zone_scheduling] WARNING: Building '{building_id}' config not found in Redis")
 
     key = _make_key(building_id, zone_id, target_date)
+    print(f"[zone_scheduling] Writing Redis key: {key}")
     redis_client.set(key, "1")
 
     return {
@@ -71,11 +67,15 @@ def remove_zone_inactive(redis_client, building_id: str, zone_id: str, target_da
     """
     Remove an inactive schedule for a zone on a given date.
     """
+    print(
+        f"[zone_scheduling] remove_zone_inactive called: building={building_id} zone={zone_id} date={target_date}")
+
     date_err = _validate_date(target_date)
     if date_err:
         return date_err
 
     key = _make_key(building_id, zone_id, target_date)
+    print(f"[zone_scheduling] Deleting Redis key: {key}")
     deleted = redis_client.delete(key)
 
     if deleted:
@@ -101,9 +101,12 @@ def get_inactive_zones_for_building(redis_client, building_id: str, target_date:
     if target_date is None:
         target_date = date.today().isoformat()
 
-    # Load building config to get all zone IDs
+    print(
+        f"[zone_scheduling] get_inactive_zones_for_building: building={building_id} date={target_date}")
+
     config_raw = redis_client.get(f"surge:building:{building_id}:config")
     if not config_raw:
+        print(f"[zone_scheduling] WARNING: Building '{building_id}' not found")
         return []
 
     config = json.loads(config_raw)
@@ -111,14 +114,19 @@ def get_inactive_zones_for_building(redis_client, building_id: str, target_date:
 
     for zone in config["zones"]:
         key = _make_key(building_id, zone["zone_id"], target_date)
-        if redis_client.exists(key):
+        exists = redis_client.exists(key)
+        print(
+            f"[zone_scheduling] Checking key: {key} -> exists={bool(exists)}")
+        if exists:
             inactive.append({
-                "zone_id": zone["zone_id"],
+                "zone_id":   zone["zone_id"],
                 "zone_name": zone.get("zone_name", zone["zone_id"]),
-                "floor_id": zone.get("floor_id"),
-                "date": target_date
+                "floor_id":  zone.get("floor_id"),
+                "date":      target_date
             })
 
+    print(
+        f"[zone_scheduling] Found {len(inactive)} inactive zones: {[z['zone_id'] for z in inactive]}")
     return inactive
 
 

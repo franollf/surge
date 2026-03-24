@@ -26,9 +26,7 @@ load_dotenv()
 
 app = FastAPI(title="SURGE")
 
-# ─────────────────────────────────────────────
 # CORS
-# ─────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,9 +36,7 @@ app.add_middleware(
     expose_headers=["X-Surge-ID"]
 )
 
-# ─────────────────────────────────────────────
 # Redis
-# ─────────────────────────────────────────────
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = os.getenv("REDIS_PORT")
 
@@ -52,9 +48,7 @@ r = redis.Redis(
     socket_timeout=2
 )
 
-# ─────────────────────────────────────────────
 # Models
-# ─────────────────────────────────────────────
 
 
 class ScanRequest(BaseModel):
@@ -76,7 +70,7 @@ class BuildingConfig(BaseModel):
     floors: list
     zones: list
     owner_id: Optional[str] = None
-    incentives: Optional[dict] = None  # incentive module flags
+    incentives: Optional[dict] = None
 
 
 class ZoneScheduleRequest(BaseModel):
@@ -96,9 +90,7 @@ class StaffScanRequest(BaseModel):
     staff_id:        Optional[str] = None
 
 
-# ─────────────────────────────────────────────
 # Zone Name → ID Resolution
-# ─────────────────────────────────────────────
 
 def resolve_zone_id(zones: list, zone_input: str) -> str | None:
     """
@@ -123,9 +115,7 @@ def resolve_zone_id(zones: list, zone_input: str) -> str | None:
     return None
 
 
-# ─────────────────────────────────────────────
 # Issue SURGE ID
-# ─────────────────────────────────────────────
 @app.get("/issue")
 def issue_surge_id():
     surge = create_surge_id()
@@ -141,21 +131,15 @@ def issue_surge_id():
     )
 
 
-# ─────────────────────────────────────────────
-# Save Building Config (WITH AUTH + AIRPORT ZONE VALIDATION)
-# ─────────────────────────────────────────────
+# Save Building Config
 @app.post("/buildings/{building_id}/config")
 def save_building_config(
     building_id: str,
     config: BuildingConfig,
     authorization: str = Header(None)
 ):
-    print(f"📥 Saving building: {building_id}")
-
     user_id = verify_token(authorization)
-    print(f"✅ Authenticated user: {user_id}")
 
-    # Airport zone validation — only the 6 allowed types accepted
     zone_errors = validate_building_zones(config.zones)
     if zone_errors:
         raise HTTPException(
@@ -177,64 +161,43 @@ def save_building_config(
 
     r.sadd(f"surge:user:{user_id}:buildings", building_id)
 
-    print(f"✅ Building saved successfully for user {user_id}")
-
     return {"success": True, "building_id": building_id, "owner_id": user_id}
 
 
-# ─────────────────────────────────────────────
-# Get Building Config (WITH OWNERSHIP CHECK)
-# ─────────────────────────────────────────────
+# Get Building Config
 @app.get("/buildings/{building_id}/config")
 def get_building_config(
     building_id: str,
     authorization: str = Header(None)
 ):
-    print(f"📤 Loading building: {building_id}")
-
     user_id = verify_token(authorization)
-    print(f"✅ Authenticated user: {user_id}")
 
     raw = r.get(f"surge:building:{building_id}:config")
 
     if not raw:
-        print(f"❌ Building not found: {building_id}")
         raise HTTPException(status_code=404, detail="No config found")
 
     config = json.loads(raw)
 
     if config.get('owner_id') != user_id:
-        print(
-            f"🚫 Access denied: User {user_id} tried to access building owned by {config.get('owner_id')}")
         raise HTTPException(
             status_code=403, detail="Access denied: You don't own this building")
-
-    print(f"✅ Building loaded: {building_id}")
 
     return config
 
 
-# ─────────────────────────────────────────────
-# List Buildings (USER-SPECIFIC)
-# ─────────────────────────────────────────────
+# List Buildings
 @app.get("/buildings")
 def list_buildings(authorization: str = Header(None)):
     """Returns all building IDs owned by the authenticated user."""
-    print("📋 Listing buildings")
-
     user_id = verify_token(authorization)
-    print(f"✅ Authenticated user: {user_id}")
 
     building_ids = r.smembers(f"surge:user:{user_id}:buildings")
-
-    print(f"Found {len(building_ids)} buildings for user {user_id}")
 
     return {"buildings": list(building_ids)}
 
 
-# ─────────────────────────────────────────────
 # Scan Endpoint
-# ─────────────────────────────────────────────
 @app.post("/scan")
 def record_scan(request: ScanRequest):
     """Record a passenger scanning into a zone."""
@@ -283,9 +246,7 @@ def record_scan(request: ScanRequest):
     }
 
 
-# ─────────────────────────────────────────────
 # Bulk Scan Endpoint
-# ─────────────────────────────────────────────
 @app.post("/scan/bulk")
 def record_bulk_scan(request: BulkScanRequest):
     """Record multiple passengers scanning into the same zone at once."""
@@ -340,18 +301,14 @@ def record_bulk_scan(request: BulkScanRequest):
     }
 
 
-# ─────────────────────────────────────────────
 # Congestion Data
-# ─────────────────────────────────────────────
 @app.get("/congestion/{building_id}")
 def get_congestion(building_id: str):
     """Get real-time congestion data for all zones in a building."""
     return get_zone_congestion(r, building_id)
 
 
-# ─────────────────────────────────────────────
 # Zone Inactivity Scheduling
-# ─────────────────────────────────────────────
 
 @app.post("/buildings/{building_id}/zones/schedule-inactive")
 def schedule_zone_inactive(building_id: str, data: ZoneScheduleRequest):
@@ -381,9 +338,7 @@ def get_active_zones(building_id: str):
     return {"active_zone_ids": active_ids}
 
 
-# ─────────────────────────────────────────────
 # Passenger: current zone
-# ─────────────────────────────────────────────
 @app.get("/passenger/{surge_id}/zone")
 def get_passenger_zone(surge_id: str):
     """
@@ -412,9 +367,7 @@ def get_passenger_zone(surge_id: str):
     }
 
 
-# ─────────────────────────────────────────────
-# Passenger: full status (all 4 display fields)
-# ─────────────────────────────────────────────
+# Passenger: full status
 @app.get("/passenger/{surge_id}/status")
 def get_passenger_status(surge_id: str):
     """
@@ -490,7 +443,6 @@ def get_passenger_status(surge_id: str):
                 "congestion_level": cong.get("congestion_level"),
                 "active_passengers": cong.get("active_passengers", 0),
             })
-        # Sort by wait time ascending so lowest wait shows first
         result.sort(key=lambda x: x["wait_minutes"]
                     if x["wait_minutes"] is not None else 999)
         return result
@@ -516,9 +468,7 @@ def get_passenger_status(surge_id: str):
     }
 
 
-# ─────────────────────────────────────────────
-# Passenger: public building config (no auth)
-# ─────────────────────────────────────────────
+# Passenger: public building config
 @app.get("/passenger/building/{building_id}/config")
 def get_building_config_public(building_id: str):
     """
@@ -548,16 +498,12 @@ def get_building_config_public(building_id: str):
     }
 
 
-# ─────────────────────────────────────────────
-# Airport: live terminal status (no surge_id needed)
-# ─────────────────────────────────────────────
+# Airport: live terminal status
 @app.get("/airport/{building_id}/live")
 def get_airport_live(building_id: str):
     """
-    Public — no auth, no surge_id.
     Powers the pre-scan view. Same response shape as /passenger/{id}/status
-    so the frontend uses identical render logic for both states.
-    Congestion only — no flight/boarding data.
+    so the frontend just uses identical render logic for both states.
     """
     config_raw = r.get(f"surge:building:{building_id}:config")
     if not config_raw:
@@ -597,7 +543,6 @@ def get_airport_live(building_id: str):
                 "congestion_level": cong.get("congestion_level"),
                 "active_passengers": cong.get("active_passengers", 0),
             })
-        # Sort by wait time ascending so lowest wait shows first
         result.sort(key=lambda x: x["wait_minutes"]
                     if x["wait_minutes"] is not None else 999)
         return result
@@ -617,13 +562,10 @@ def get_airport_live(building_id: str):
     }
 
 
-# ─────────────────────────────────────────────
 # Airport: valid zone types
-# ─────────────────────────────────────────────
 @app.get("/airport/zone-types")
 def get_valid_zone_types():
     """
-    Public — no auth.
     Returns the list of valid airport zone types for frontend dropdowns.
     """
     return {
@@ -633,16 +575,12 @@ def get_valid_zone_types():
         ]
     }
 
-# ─────────────────────────────────────────────
-# Fastest Route Recommendation
-# ─────────────────────────────────────────────
 
+# Fastest Route Recommendation
 
 @app.get("/airport/{building_id}/recommend/{zone_type}")
 def get_route_recommendation(building_id: str, zone_type: str):
     """
-    Public — no auth.
-
     Compares all zones of the requested type by:
       1. congestion_score  (primary sort — lower is better)
       2. estimated_wait_minutes (queue length proxy)
@@ -666,7 +604,6 @@ def get_route_recommendation(building_id: str, zone_type: str):
     config = json.loads(config_raw)
     zones = config.get("zones", [])
 
-    # Filter to requested zone type only
     target_zones = [z for z in zones if z.get("zone_type") == zone_type]
 
     if not target_zones:
@@ -675,11 +612,9 @@ def get_route_recommendation(building_id: str, zone_type: str):
             detail=f"No zones of type '{zone_type}' found in this building"
         )
 
-    # Get congestion data
     congestion_data = get_zone_congestion(r, building_id)
     zone_congestion = congestion_data.get("zones", {})
 
-    # Build ranked list
     ranked = []
     for z in target_zones:
         cong = zone_congestion.get(z["zone_id"], {})
@@ -688,7 +623,6 @@ def get_route_recommendation(building_id: str, zone_type: str):
         level = cong.get("congestion_level", "LOW")
         queue = cong.get("active_passengers", 0) or 0
 
-        # total_travel_time = wait time only (no distance data available)
         total_time = round(wait, 1) if wait is not None else None
 
         ranked.append({
@@ -701,10 +635,6 @@ def get_route_recommendation(building_id: str, zone_type: str):
             "queue_length":           queue,
         })
 
-    # Sort by fastest total travel time:
-    # Primary   = wait_minutes (queue time — the only travel time we have)
-    # Secondary = congestion_score (tiebreaker — lower score = less busy)
-    # Zones with no wait data sort to the end
     ranked.sort(key=lambda x: (
         x["wait_minutes"] if x["wait_minutes"] is not None else 999,
         x["congestion_score"]
@@ -720,10 +650,8 @@ def get_route_recommendation(building_id: str, zone_type: str):
         "recommended":   recommended,
     }
 
-# ─────────────────────────────────────────────
-# Virtual Queue System
-# ─────────────────────────────────────────────
 
+# Virtual Queue System
 
 def get_queue_key(building_id: str, zone_id: str) -> str:
     return f"queue:{building_id}:{zone_id}"
@@ -777,7 +705,6 @@ def get_queue_status(building_id: str, zone_id: str, surge_id: str = Query(...))
 
 @app.post("/queue/{building_id}/{zone_id}/join")
 def join_queue(building_id: str, zone_id: str, request: QueueJoinRequest):
-    """Public — adds passenger to queue, returns position."""
     surge_id = request.surge_id
 
     if not r.exists(f"surge:{surge_id}"):
@@ -798,7 +725,6 @@ def join_queue(building_id: str, zone_id: str, request: QueueJoinRequest):
     queue_key = get_queue_key(building_id, zone_id)
     meta_key = get_queue_meta_key(building_id, zone_id)
 
-    # Check if already in queue
     queue_members = r.lrange(queue_key, 0, -1)
     already_in = surge_id in queue_members
 
@@ -909,25 +835,13 @@ def get_all_queues(building_id: str):
 
     return {"building_id": building_id, "queues": queues}
 
-# ─────────────────────────────────────────────
-# Passenger Density Estimation
-# ─────────────────────────────────────────────
 
+# Passenger Density Estimation
 
 @app.get("/airport/{building_id}/density")
 def get_passenger_density(building_id: str):
     """
-    Public — no auth.
-
-    Estimates true passenger volume per zone by scaling observed
-    scan counts by the inverse of the participation rate.
-
-    Algorithm:
-        estimated_total = scans_detected / PARTICIPATION_RATE
-
-    PARTICIPATION_RATE is set in airport_zones.py (default 0.4 = 40%).
     This assumes 40% of real passengers scan a QR code at each checkpoint.
-
     Returns per-zone density estimates plus a building-wide summary.
     """
     config_raw = r.get(f"surge:building:{building_id}:config")
@@ -948,14 +862,11 @@ def get_passenger_density(building_id: str):
         zone_id = zone["zone_id"]
         cong = zone_congestion.get(zone_id, {})
 
-        # scans_detected = active passengers currently tracked in this zone
         scans_detected = cong.get("active_passengers", 0) or 0
 
-        # Core density formula
         estimated_total = round(
             scans_detected / PARTICIPATION_RATE) if scans_detected > 0 else 0
 
-        # Density confidence — higher scan count = more reliable estimate
         if scans_detected == 0:
             confidence = "none"
         elif scans_detected < 5:
@@ -979,7 +890,6 @@ def get_passenger_density(building_id: str):
             "confidence":            confidence,
         })
 
-    # Sort by estimated passengers descending so busiest zones show first
     zone_estimates.sort(key=lambda x: x["estimated_passengers"], reverse=True)
 
     return {
@@ -994,25 +904,11 @@ def get_passenger_density(building_id: str):
         ),
     }
 
-# ─────────────────────────────────────────────
-# Staff Scan Tool
-# ─────────────────────────────────────────────
 
+# Staff Scan Tool
 
 @app.post("/staff/scan")
 def staff_scan(request: StaffScanRequest, authorization: str = Header(None)):
-    """
-    Auth required — staff only.
-
-    Records a staff-observed headcount for a zone by generating synthetic
-    SURGE IDs and bulk-scanning them into the zone. This supplements
-    passenger scan data and updates congestion + density metrics directly.
-
-    passenger_count: number of passengers staff can see in the zone.
-    Each call replaces previous staff scans for this zone (uses a
-    dedicated staff surge ID pool keyed per zone so they don't pollute
-    the passenger SURGE ID space).
-    """
     user_id = verify_token(authorization)
 
     building_id = request.building_id
@@ -1027,7 +923,6 @@ def staff_scan(request: StaffScanRequest, authorization: str = Header(None)):
         raise HTTPException(
             status_code=422, detail="passenger_count must be <= 5000")
 
-    # Verify building + zone exist
     config_raw = r.get(f"surge:building:{building_id}:config")
     if not config_raw:
         raise HTTPException(status_code=404, detail="Building not found")
@@ -1039,8 +934,6 @@ def staff_scan(request: StaffScanRequest, authorization: str = Header(None)):
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
 
-    # Clean up previous staff scan IDs for this zone
-    # so headcount updates replace rather than accumulate
     staff_pool_key = f"staff:scans:{building_id}:{zone_id}"
     old_ids = r.lrange(staff_pool_key, 0, -1)
     for old_id in old_ids:
@@ -1049,7 +942,6 @@ def staff_scan(request: StaffScanRequest, authorization: str = Header(None)):
         r.delete(f"surge:{old_id}:current_zone")
     r.delete(staff_pool_key)
 
-    # Generate synthetic SURGE IDs for observed passengers
     import uuid
     timestamp = datetime.utcnow().isoformat()
     new_ids = []
@@ -1061,20 +953,15 @@ def staff_scan(request: StaffScanRequest, authorization: str = Header(None)):
             "building_id": building_id,
             "timestamp":   timestamp,
         }
-        # Register as active SURGE ID
         r.set(f"surge:{surge_id}", "active", ex=3600)
         r.rpush(f"surge:{surge_id}:scans", json.dumps(scan_data))
         r.set(f"surge:{surge_id}:current_zone", zone_id, ex=3600)
         r.expire(f"surge:{surge_id}:scans", 3600)
         new_ids.append(surge_id)
 
-    # Track the pool so we can clean it up on next staff scan
     if new_ids:
         r.rpush(staff_pool_key, *new_ids)
         r.expire(staff_pool_key, 3600)
-
-    print(
-        f"✅ Staff scan by {user_id}: {passenger_count} passengers in {zone_id} @ {building_id}")
 
     return {
         "success":          True,

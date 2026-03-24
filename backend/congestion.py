@@ -13,9 +13,7 @@ class CongestionLevel(str, Enum):
     HIGH = "HIGH"
 
 
-# ─────────────────────────────────────────────
 # Configuration
-# ─────────────────────────────────────────────
 
 CONGESTION_THRESHOLDS = {
     "low_max": 50,
@@ -32,9 +30,7 @@ MIN_THROUGHPUT = 0.5
 STABILITY_CONSTANT = 1
 
 
-# ─────────────────────────────────────────────
 # Redis Helpers
-# ─────────────────────────────────────────────
 
 def get_all_surge_ids(redis_client) -> list[str]:
     surge_ids = []
@@ -44,7 +40,6 @@ def get_all_surge_ids(redis_client) -> list[str]:
         cursor, keys = redis_client.scan(cursor, match="surge:*", count=100)
 
         for key in keys:
-            # only top-level surge keys
             if key.count(":") == 1:
                 surge_ids.append(key.replace("surge:", ""))
 
@@ -72,9 +67,7 @@ def get_scans_for_surge_id(redis_client, surge_id: str) -> list[dict]:
     return scans
 
 
-# ─────────────────────────────────────────────
 # Occupancy
-# ─────────────────────────────────────────────
 
 def compute_active_occupancy(redis_client, surge_ids, building_id):
     zone_counts = defaultdict(int)
@@ -91,9 +84,7 @@ def compute_active_occupancy(redis_client, surge_ids, building_id):
     return dict(zone_counts)
 
 
-# ─────────────────────────────────────────────
 # Dwell
-# ─────────────────────────────────────────────
 
 def compute_dwell_times(scans, building_id):
     dwell_times = defaultdict(list)
@@ -130,9 +121,7 @@ def aggregate_dwell_by_zone(all_dwell_times):
     return avg
 
 
-# ─────────────────────────────────────────────
 # Flow / Throughput
-# ─────────────────────────────────────────────
 
 def compute_scan_rate(redis_client, surge_ids, building_id):
     cutoff = datetime.utcnow() - timedelta(minutes=SCAN_RATE_WINDOW_MINUTES)
@@ -176,9 +165,7 @@ def compute_processing_rate(redis_client, surge_ids, building_id):
     return processing_rate
 
 
-# ─────────────────────────────────────────────
 # Wait Time
-# ─────────────────────────────────────────────
 
 def estimate_wait_time(active_count, processing_rate):
     effective_rate = max(processing_rate, MIN_THROUGHPUT)
@@ -186,9 +173,7 @@ def estimate_wait_time(active_count, processing_rate):
     return int(round(wait))
 
 
-# ─────────────────────────────────────────────
 # Congestion Scoring
-# ─────────────────────────────────────────────
 
 def calculate_congestion_score(active_count, scan_rate, avg_dwell):
     return (
@@ -206,13 +191,10 @@ def classify_congestion(score):
     return CongestionLevel.HIGH
 
 
-# ─────────────────────────────────────────────
 # Main Entry Point
-# ─────────────────────────────────────────────
 
 def get_zone_congestion(redis_client, building_id: str, active_zones: set[str] = None) -> dict:
 
-    # Load building config
     config_raw = redis_client.get(
         f"surge:building:{building_id}:config"
     )
@@ -228,13 +210,11 @@ def get_zone_congestion(redis_client, building_id: str, active_zones: set[str] =
 
     defined_zones = {z["zone_id"] for z in config["zones"]}
 
-    # Filter to only active zones if provided
     if active_zones is not None:
         defined_zones = defined_zones & active_zones
 
     surge_ids = get_all_surge_ids(redis_client)
 
-    # Compute dwell
     all_dwell_times = []
 
     for surge_id in surge_ids:
